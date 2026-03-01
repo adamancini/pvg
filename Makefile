@@ -1,28 +1,24 @@
-VERSION := $(shell cat VERSION)
-BINARY  := pvg
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+.PHONY: help build install test vet clean
 
-.PHONY: build test vet install clean help
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
+LDFLAGS := -X main.version=$(VERSION)
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
 build: ## Build pvg binary
-	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) ./cmd/pvg/
-	@echo "Built $(BINARY) $(VERSION)"
+	go build -ldflags "$(LDFLAGS)" -o pvg ./cmd/pvg
 
-test: ## Run all tests
-	go test ./... -v
+install: ## Install pvg to $GOPATH/bin
+	go install -ldflags "$(LDFLAGS)" ./cmd/pvg
+
+test: ## Run tests
+	go test -v ./...
 
 vet: ## Run go vet
 	go vet ./...
 
-install: build ## Install pvg to ~/go/bin
-	@mkdir -p "$(HOME)/go/bin"
-	cp $(BINARY) "$(HOME)/go/bin/$(BINARY)"
-	@echo "Installed $(BINARY) $(VERSION) to $(HOME)/go/bin/$(BINARY)"
-
 clean: ## Remove build artifacts
-	rm -f $(BINARY)
+	rm -f pvg
 	rm -rf dist/

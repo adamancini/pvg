@@ -1,29 +1,30 @@
 version: 2
 
 builds:
-  - id: pvg
+  - main: ./cmd/pvg
     binary: pvg
-    main: ./cmd/pvg/
     env:
       - CGO_ENABLED=0
     goos:
-      - darwin
       - linux
+      - darwin
     goarch:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w -X main.version={{ .Version }}
 
 archives:
-  - id: default
-    formats:
-      - tar.gz
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
-  name_template: checksums.txt
+  name_template: "checksums.txt"
 
-release:
-  github:
-    owner: paivot-ai
-    name: pvg
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
