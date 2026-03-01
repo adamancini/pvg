@@ -81,7 +81,7 @@ func UserPromptSubmit() error {
 func emitDispatcherContext(context string) error {
 	resp := map[string]any{
 		"hookSpecificOutput": map[string]any{
-			"hookEventName": "UserPromptSubmit",
+			"hookEventName":     "UserPromptSubmit",
 			"additionalContext": context,
 		},
 	}
