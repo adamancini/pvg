@@ -21,7 +21,7 @@ type State struct {
 	Mode                string `json:"mode"`                  // "all" or "epic"
 	TargetEpic          string `json:"target_epic,omitempty"` // epic ID when mode=epic
 	Iteration           int    `json:"iteration"`
-	MaxIterations       int    `json:"max_iterations"`        // 0 = unlimited
+	MaxIterations       int    `json:"max_iterations"` // 0 = unlimited
 	ConsecutiveWaits    int    `json:"consecutive_waits"`
 	MaxConsecutiveWaits int    `json:"max_consecutive_waits"`
 	WaitIterations      int    `json:"wait_iterations"`

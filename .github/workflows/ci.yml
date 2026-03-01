@@ -68,9 +68,10 @@ jobs:
       - name: Run gosec
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
+          # G204: subprocess with variable args -- CLI dispatches to git/nd by design
           # G301/G302/G306: file/dir permissions -- markdown files use standard 0644/0755
           # G304: file inclusion via variable -- expected for filesystem CLI
-          gosec -exclude=G301,G302,G304,G306 -severity medium ./...
+          gosec -exclude=G204,G301,G302,G304,G306 -severity medium ./...
 
   secrets:
     name: Secret Scan

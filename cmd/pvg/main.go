@@ -274,9 +274,9 @@ Examples:
 func loopSetup(cwd string, args []string) error {
 	// Parse flags manually (consistent with pvg pattern, no cobra)
 	var (
-		mode      = ""
-		epicID    = ""
-		maxIter   = 50 // default
+		mode    = ""
+		epicID  = ""
+		maxIter = 50 // default
 	)
 
 	for i := 0; i < len(args); i++ {

@@ -211,7 +211,7 @@ func TestCheckFilePath_AllowsDispatcherStateOutsideKnowledge(t *testing.T) {
 
 func TestCheckBash_BlocksProjectVaultWrite(t *testing.T) {
 	input := HookInput{
-		ToolName:  "Bash",
+		ToolName: "Bash",
 		ToolInput: ToolInput{Command: `cat > ` + testProjectRoot + `/.vault/knowledge/patterns/test.md << 'EOF'
 content
 EOF`},

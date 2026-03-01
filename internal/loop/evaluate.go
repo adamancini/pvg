@@ -19,12 +19,12 @@ type StopConfig struct {
 
 // StopDecision is the output of EvaluateStop.
 type StopDecision struct {
-	Allow         bool   // true = allow session exit
-	Reason        string // human-readable explanation
-	RemoveState   bool   // true = clean up state file on exit
-	NewIteration  int    // updated iteration count
-	NewConsecWaits int   // updated consecutive wait count
-	NewWaitIters  int    // updated total wait iterations
+	Allow          bool   // true = allow session exit
+	Reason         string // human-readable explanation
+	RemoveState    bool   // true = clean up state file on exit
+	NewIteration   int    // updated iteration count
+	NewConsecWaits int    // updated consecutive wait count
+	NewWaitIters   int    // updated total wait iterations
 }
 
 // EvaluateStop is a pure function that decides whether to allow session exit

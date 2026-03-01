@@ -83,7 +83,7 @@ func queryEpicCounts(epicID string) (WorkCounts, error) {
 			}
 		case "blocked":
 			wc.Blocked++
-		// closed/done issues are not counted
+			// closed/done issues are not counted
 		}
 	}
 
