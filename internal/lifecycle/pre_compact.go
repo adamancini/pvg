@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/paivot-ai/pvg/internal/dispatcher"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
 )
 
@@ -19,6 +20,7 @@ func PreCompact() error {
 			fmt.Println()
 			fmt.Println(result.Content)
 			outputTwoTierGuidance()
+			outputDispatcherReminder()
 			return nil
 		}
 	}
@@ -33,6 +35,7 @@ func PreCompact() error {
 			fmt.Println()
 			fmt.Println(string(data))
 			outputTwoTierGuidance()
+			outputDispatcherReminder()
 			return nil
 		}
 	}
@@ -40,6 +43,7 @@ func PreCompact() error {
 	// Static fallback
 	fmt.Print(staticPreCompact())
 	outputTwoTierGuidance()
+	outputDispatcherReminder()
 	return nil
 }
 
@@ -55,6 +59,36 @@ func outputTwoTierGuidance() {
       Create files directly in .vault/knowledge/decisions/, patterns/, debug/, or conventions/
 `)
 	}
+}
+
+// outputDispatcherReminder checks if dispatcher mode is active and, if so,
+// emits a prominent rules block before compaction. This is defense-in-depth:
+// the UserPromptSubmit hook also re-injects a reminder on every prompt, but
+// putting the rules right before compaction maximizes the chance that the
+// compaction summary preserves them.
+func outputDispatcherReminder() {
+	cwd, _ := os.Getwd()
+	if cwd == "" {
+		return
+	}
+	state, err := dispatcher.ReadState(cwd)
+	if err != nil || !state.Enabled {
+		return
+	}
+	fmt.Print(staticDispatcherReminder())
+}
+
+// staticDispatcherReminder returns the dispatcher rules block for pre-compact injection.
+func staticDispatcherReminder() string {
+	return `
+[DISPATCHER MODE -- SURVIVES COMPACTION]
+You are operating in DISPATCHER MODE. This is NON-NEGOTIABLE after compaction:
+- You are a COORDINATOR. You spawn agents. You relay questions. You summarize outputs.
+- You NEVER write BUSINESS.md, DESIGN.md, ARCHITECTURE.md, source code, or story files yourself.
+- You NEVER skip agents to "save time".
+- If you catch yourself about to write a file that an agent should produce, STOP and spawn the agent.
+This rule persists across compaction boundaries.
+`
 }
 
 func staticPreCompact() string {

@@ -112,6 +112,34 @@ func TestStaticOperatingMode_ContainsKeyContent(t *testing.T) {
 	}
 }
 
+func TestStaticDispatcherReminder_ContainsKeyContent(t *testing.T) {
+	text := staticDispatcherReminder()
+	checks := []string{
+		"DISPATCHER MODE",
+		"SURVIVES COMPACTION",
+		"COORDINATOR",
+		"NEVER write BUSINESS.md",
+		"NEVER skip agents",
+		"compaction boundaries",
+	}
+	for _, check := range checks {
+		if !strings.Contains(text, check) {
+			t.Errorf("static dispatcher reminder missing %q", check)
+		}
+	}
+}
+
+func TestOutputDispatcherReminder_NoopWhenInactive(t *testing.T) {
+	// In a temp dir with no state file, outputDispatcherReminder should be a no-op.
+	// We can't easily capture stdout here, but at minimum verify no panic.
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	outputDispatcherReminder() // should not panic
+}
+
 func TestStaticPreCompact_ContainsKeyContent(t *testing.T) {
 	text := staticPreCompact()
 	checks := []string{

@@ -23,17 +23,32 @@ var triggerPhrases = []string{
 	"with paivot",
 }
 
+// dispatcherActivationContext is the full context injected when dispatcher mode
+// is first activated by a trigger phrase.
+const dispatcherActivationContext = "DISPATCHER MODE ACTIVE. You are a coordinator only. " +
+	"Do NOT write D&F files, source code, or stories directly. Spawn the appropriate agent instead. " +
+	"BLT QUESTIONING PROTOCOL: When a BLT agent (BA, Designer, Architect) returns output, " +
+	"check for a QUESTIONS_FOR_USER block BEFORE checking for a document. " +
+	"The agent's first output in any D&F engagement MUST be questions, not a document. " +
+	"If the agent produced a document on its first turn without any questioning round, " +
+	"this is a protocol violation -- re-spawn the agent with an explicit reminder to ask questions first."
+
+// dispatcherReminderContext is the concise nudge injected on every prompt when
+// dispatcher mode is already active. This survives context compaction by being
+// re-injected continuously rather than relying on the original activation
+// message persisting in compressed context.
+const dispatcherReminderContext = "DISPATCHER MODE REMINDER: You are a coordinator, NOT a producer. " +
+	"Do NOT write BUSINESS.md, DESIGN.md, ARCHITECTURE.md, source code, test files, or story files yourself. " +
+	"Spawn the appropriate agent for any production work. " +
+	"If you are about to write a file that an agent should produce, STOP and spawn the agent instead."
+
 // UserPromptSubmit detects Paivot trigger phrases in user prompts and
-// auto-enables dispatcher mode. Outputs JSON with additionalContext when
-// dispatcher mode is activated.
+// auto-enables dispatcher mode. When dispatcher mode is already active,
+// injects a concise reminder on every prompt to prevent post-compaction drift.
 func UserPromptSubmit() error {
 	var input userPromptInput
 	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
 		return nil // fail-open
-	}
-
-	if !containsTriggerPhrase(input.Prompt) {
-		return nil // silent exit
 	}
 
 	cwd, _ := os.Getwd()
@@ -41,24 +56,33 @@ func UserPromptSubmit() error {
 		return nil
 	}
 
-	// Enable dispatcher mode
-	if err := dispatcher.On(cwd); err != nil {
-		// Log but don't block
-		fmt.Fprintf(os.Stderr, "pvg: failed to enable dispatcher mode: %v\n", err)
-		return nil
+	// Path 1: Trigger phrase -- activate dispatcher mode
+	if containsTriggerPhrase(input.Prompt) {
+		if err := dispatcher.On(cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "pvg: failed to enable dispatcher mode: %v\n", err)
+			return nil
+		}
+		return emitDispatcherContext(dispatcherActivationContext)
 	}
 
-	// Output hook response with context reinforcement
+	// Path 2: No trigger phrase, but dispatcher mode already active -- reinforce.
+	// This is the post-compaction safety net: even if the original activation
+	// context was lost during compaction, the reminder re-injects the core
+	// constraint on the very next user prompt.
+	state, err := dispatcher.ReadState(cwd)
+	if err != nil || !state.Enabled {
+		return nil // not in dispatcher mode
+	}
+	return emitDispatcherContext(dispatcherReminderContext)
+}
+
+// emitDispatcherContext outputs a UserPromptSubmit hook response with the
+// given context string as additionalContext.
+func emitDispatcherContext(context string) error {
 	resp := map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName": "UserPromptSubmit",
-			"additionalContext": "DISPATCHER MODE ACTIVE. You are a coordinator only. " +
-				"Do NOT write D&F files, source code, or stories directly. Spawn the appropriate agent instead. " +
-				"BLT QUESTIONING PROTOCOL: When a BLT agent (BA, Designer, Architect) returns output, " +
-				"check for a QUESTIONS_FOR_USER block BEFORE checking for a document. " +
-				"The agent's first output in any D&F engagement MUST be questions, not a document. " +
-				"If the agent produced a document on its first turn without any questioning round, " +
-				"this is a protocol violation -- re-spawn the agent with an explicit reminder to ask questions first.",
+			"additionalContext": context,
 		},
 	}
 	return json.NewEncoder(os.Stdout).Encode(resp)

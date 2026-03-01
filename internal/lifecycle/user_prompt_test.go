@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -40,6 +41,45 @@ func TestContainsTriggerPhrase_CaseInsensitive(t *testing.T) {
 	}
 	if !containsTriggerPhrase("use paivot") {
 		t.Error("expected case-insensitive match for use paivot")
+	}
+}
+
+func TestDispatcherActivationContext_ContainsKeyPhrases(t *testing.T) {
+	checks := []string{
+		"DISPATCHER MODE ACTIVE",
+		"coordinator only",
+		"Do NOT write D&F files",
+		"Spawn the appropriate agent",
+		"BLT QUESTIONING PROTOCOL",
+		"QUESTIONS_FOR_USER",
+	}
+	for _, phrase := range checks {
+		if !strings.Contains(dispatcherActivationContext, phrase) {
+			t.Errorf("activation context missing %q", phrase)
+		}
+	}
+}
+
+func TestDispatcherReminderContext_ContainsKeyPhrases(t *testing.T) {
+	checks := []string{
+		"DISPATCHER MODE REMINDER",
+		"coordinator, NOT a producer",
+		"BUSINESS.md",
+		"DESIGN.md",
+		"ARCHITECTURE.md",
+		"source code",
+		"Spawn the appropriate agent",
+	}
+	for _, phrase := range checks {
+		if !strings.Contains(dispatcherReminderContext, phrase) {
+			t.Errorf("reminder context missing %q", phrase)
+		}
+	}
+}
+
+func TestDispatcherReminderContext_IsShorterThanActivation(t *testing.T) {
+	if len(dispatcherReminderContext) >= len(dispatcherActivationContext) {
+		t.Error("reminder context should be more concise than activation context")
 	}
 }
 
