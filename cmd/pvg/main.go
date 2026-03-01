@@ -324,9 +324,10 @@ func loopSetup(cwd string, args []string) error {
 		return fmt.Errorf("specify --all or --epic EPIC_ID (or pass epic ID as positional arg)")
 	}
 
-	// Check not already active
+	// Idempotent: if already active, report status and return success
 	if loop.IsActive(cwd) {
-		return fmt.Errorf("loop already active (use 'pvg loop cancel' first)")
+		fmt.Println("[LOOP] Execution loop already active -- no changes made.")
+		return loopStatus(cwd)
 	}
 
 	// Validate epic if specified
