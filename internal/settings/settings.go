@@ -15,19 +15,19 @@ const settingsFile = ".vault/knowledge/.settings.yaml"
 // defaults for all known settings.
 // Keys here must match those documented in commands/vault-settings.md.
 var defaults = map[string]string{
-	"session_start_max_notes":  "10",
-	"auto_capture":             "true",
-	"staleness_days":           "30",
-	"stack_detection":          "false",
-	"project_vault_git":        "ask",
-	"default_scope":            "system",
-	"proposal_expiry_days":     "30",
-	"auto_init_project_vault":  "ask",
-	"workflow.fsm":             "false",
-	"workflow.sequence":        "open,in_progress,delivered,review,closed",
-	"workflow.exit_rules":      "blocked:open,in_progress;rejected:in_progress",
-	"workflow.custom_statuses": "delivered,review,rejected",
-	"architecture.c4":          "false",
+	"session_start_max_notes":      "10",
+	"auto_capture":                 "true",
+	"staleness_days":               "30",
+	"stack_detection":              "false",
+	"project_vault_git":            "ask",
+	"default_scope":                "system",
+	"proposal_expiry_days":         "30",
+	"auto_init_project_vault":      "ask",
+	"workflow.fsm":                 "false",
+	"workflow.sequence":            "open,in_progress,delivered,review,closed",
+	"workflow.exit_rules":          "blocked:open,in_progress;rejected:in_progress",
+	"workflow.custom_statuses":     "delivered,review,rejected",
+	"architecture.c4":              "false",
 	"loop.persist_across_sessions": "false",
 }
 

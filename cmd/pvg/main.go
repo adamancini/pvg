@@ -518,9 +518,9 @@ func loopRecover(cwd string, args []string) error {
 
 	if jsonOutput {
 		report := struct {
-			Summary loop.RecoverSummary `json:"summary"`
+			Summary loop.RecoverSummary  `json:"summary"`
 			Actions []loop.RecoverAction `json:"actions"`
-			Errors  []string            `json:"errors,omitempty"`
+			Errors  []string             `json:"errors,omitempty"`
 		}{
 			Summary: plan.Summary,
 			Actions: plan.Actions,
