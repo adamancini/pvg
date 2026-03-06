@@ -1,0 +1,1 @@
+{"timestamp":"2026-03-06T14:47:30Z","command":"nd labels add HTR-test already-exists","exit_code":1,"stderr":"Error: label already exists","pattern":"invalid_flag"}
