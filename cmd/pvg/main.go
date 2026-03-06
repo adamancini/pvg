@@ -573,4 +573,3 @@ func runSeed(force bool) error {
 	}
 	return governance.Seed(force, pluginDir)
 }
-
