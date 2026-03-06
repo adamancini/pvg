@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/paivot-ai/pvg/internal/analytics"
 	"github.com/paivot-ai/pvg/internal/dispatcher"
 	"github.com/paivot-ai/pvg/internal/governance"
 	"github.com/paivot-ai/pvg/internal/guard"
@@ -103,6 +104,8 @@ func main() {
 		err = runLoop(args)
 	case "dispatcher":
 		err = runDispatcher(args)
+	case "telemetry":
+		err = runTelemetry(args)
 	case "settings":
 		err = settings.Run(args)
 	case "version", "--version", "-V":
@@ -132,6 +135,9 @@ Commands:
   hook user-prompt       UserPromptSubmit hook (auto-detect dispatcher mode)
   hook subagent-start    SubagentStart hook (BLT agent tracking)
   hook subagent-stop     SubagentStop hook (BLT agent tracking)
+  hook memory-read       PostToolUse hook (intercept Read on memory files)
+  hook memory-write      PostToolUse hook (intercept Write on memory files)
+  hook memory-edit       PostToolUse hook (intercept Edit on memory files)
   guard                  PreToolUse scope guard (reads JSON from stdin)
   loop setup [flags]     Start an execution loop (--all, --epic ID, --max[-iterations] N)
   loop cancel            Cancel active execution loop
@@ -139,6 +145,7 @@ Commands:
   loop snapshot          Checkpoint active agent/worktree state
   loop recover           Clean up after context loss
   dispatcher on|off|status  Manage dispatcher mode
+  telemetry [subcommand] Telemetry and analytics commands
   seed [--force]         Seed vault with agent prompts and conventions
   settings [key=value]   View or set project settings
   version                Print version
@@ -161,6 +168,12 @@ func runHook(name string) error {
 		return lifecycle.SubagentStart()
 	case "subagent-stop":
 		return lifecycle.SubagentStop()
+	case "memory-read":
+		return lifecycle.MemoryRead()
+	case "memory-write":
+		return lifecycle.MemoryWrite()
+	case "memory-edit":
+		return lifecycle.MemoryEdit()
 	default:
 		return fmt.Errorf("unknown hook %q", name)
 	}
@@ -563,4 +576,37 @@ func runSeed(force bool) error {
 		}
 	}
 	return governance.Seed(force, pluginDir)
+}
+
+func runTelemetry(args []string) error {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "pvg telemetry: missing subcommand")
+		fmt.Fprintln(os.Stderr, "  log-nd-error  Log an nd command error for analysis")
+		return fmt.Errorf("missing subcommand")
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cannot determine working directory: %w", err)
+	}
+
+	switch args[0] {
+	case "log-nd-error":
+		// Usage: pvg telemetry log-nd-error <command> <exit_code> <stderr>
+		if len(args) < 4 {
+			return fmt.Errorf("usage: pvg telemetry log-nd-error <command> <exit_code> <stderr>")
+		}
+		command := args[1]
+		exitCode := 0
+		_, err := fmt.Sscanf(args[2], "%d", &exitCode)
+		if err != nil {
+			return fmt.Errorf("invalid exit code: %s", args[2])
+		}
+		stderr := args[3]
+		// Silent failure -- don't interrupt the agent's workflow
+		_ = analytics.LogNdError(cwd, command, exitCode, stderr)
+		return nil
+	default:
+		return fmt.Errorf("unknown telemetry subcommand %q", args[0])
+	}
 }
