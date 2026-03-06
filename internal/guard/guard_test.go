@@ -383,7 +383,7 @@ func TestCheckBash_AllowsNdClose(t *testing.T) {
 
 func TestCheckBash_BlocksProjectIssuesRedirect(t *testing.T) {
 	input := HookInput{
-		ToolName:  "Bash",
+		ToolName: "Bash",
 		ToolInput: ToolInput{Command: `cat > ` + testProjectRoot + `/.vault/issues/PROJ-001.md << 'EOF'
 ---
 status: pending
