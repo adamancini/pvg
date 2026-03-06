@@ -17,16 +17,19 @@
 //	pvg loop setup [--all|--epic EPIC_ID] [--max-iterations|--max N]
 //	pvg loop cancel              # Cancel active loop
 //	pvg loop status              # Show loop state
+//	pvg loop snapshot            # Checkpoint agent/worktree state
+//	pvg loop recover             # Clean up after context loss
 //	pvg version                  # Print version
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime/debug"
-
 	"strconv"
+	"strings"
 
 	"github.com/paivot-ai/pvg/internal/dispatcher"
 	"github.com/paivot-ai/pvg/internal/governance"
@@ -133,6 +136,8 @@ Commands:
   loop setup [flags]     Start an execution loop (--all, --epic ID, --max[-iterations] N)
   loop cancel            Cancel active execution loop
   loop status            Show execution loop state
+  loop snapshot          Checkpoint active agent/worktree state
+  loop recover           Clean up after context loss
   dispatcher on|off|status  Manage dispatcher mode
   seed [--force]         Seed vault with agent prompts and conventions
   settings [key=value]   View or set project settings
@@ -243,6 +248,10 @@ func runLoop(args []string) error {
 		return loopCancel(cwd)
 	case "status":
 		return loopStatus(cwd)
+	case "snapshot":
+		return loopSnapshot(cwd, args[1:])
+	case "recover":
+		return loopRecover(cwd, args[1:])
 	default:
 		loopUsage()
 		return fmt.Errorf("unknown loop subcommand %q", args[0])
@@ -256,6 +265,8 @@ Subcommands:
   setup [flags]   Start an execution loop
   cancel          Cancel active execution loop
   status          Show execution loop state
+  snapshot        Checkpoint active agent/worktree state
+  recover         Clean up after context loss
 
 Setup flags:
   --all                    Run all ready work across all epics
@@ -264,11 +275,20 @@ Setup flags:
   --max N                  Alias for --max-iterations
   --help, -h               Show this help
 
+Snapshot flags:
+  --agent ID=TYPE          Agent assignment (repeatable, e.g. --agent PROJ-a1b=developer)
+  --json                   Output as JSON
+
+Recover flags:
+  --json                   Output as JSON
+
 Examples:
   pvg loop setup --all
   pvg loop setup --epic PROJ-a1b
   pvg loop setup PROJ-a1b --max 10
-  pvg loop setup --all --max-iterations 25`)
+  pvg loop setup --all --max-iterations 25
+  pvg loop snapshot --agent PROJ-a1b=developer
+  pvg loop recover`)
 }
 
 func loopSetup(cwd string, args []string) error {
@@ -399,6 +419,133 @@ func loopStatus(cwd string) error {
 	fmt.Printf("  Consecutive waits: %d / %d\n", state.ConsecutiveWaits, state.MaxConsecutiveWaits)
 	fmt.Printf("  Total wait iterations: %d\n", state.WaitIterations)
 	fmt.Printf("  Started: %s\n", state.StartedAt)
+	return nil
+}
+
+func loopSnapshot(cwd string, args []string) error {
+	agentAssignments := make(map[string]string)
+	jsonOutput := false
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			loopUsage()
+			return nil
+		case "--json":
+			jsonOutput = true
+		case "--agent":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--agent requires ID=TYPE argument")
+			}
+			i++
+			parts := strings.SplitN(args[i], "=", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				return fmt.Errorf("--agent value must be ID=TYPE (e.g. PROJ-a1b=developer)")
+			}
+			agentAssignments[parts[0]] = parts[1]
+		default:
+			if len(args[i]) > 1 && args[i][0] == '-' {
+				return fmt.Errorf("unknown flag %q", args[i])
+			}
+			return fmt.Errorf("unexpected argument: %s", args[i])
+		}
+	}
+
+	snap, err := loop.BuildSnapshot(cwd, agentAssignments)
+	if err != nil {
+		return fmt.Errorf("build snapshot: %w", err)
+	}
+
+	if err := loop.WriteSnapshot(cwd, snap); err != nil {
+		return fmt.Errorf("write snapshot: %w", err)
+	}
+
+	if jsonOutput {
+		data, err := json.MarshalIndent(snap, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal snapshot: %w", err)
+		}
+		fmt.Println(string(data))
+	} else {
+		fmt.Printf("[SNAPSHOT] Saved at %s\n", snap.TakenAt)
+		fmt.Printf("  Stories: %d\n", len(snap.Stories))
+		for _, s := range snap.Stories {
+			agent := s.AgentType
+			if agent == "" {
+				agent = "-"
+			}
+			wt := s.WorktreePath
+			if wt == "" {
+				wt = "(none)"
+			}
+			fmt.Printf("  %s  agent=%s  worktree=%s\n", s.StoryID, agent, wt)
+		}
+	}
+
+	return nil
+}
+
+func loopRecover(cwd string, args []string) error {
+	jsonOutput := false
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			loopUsage()
+			return nil
+		case "--json":
+			jsonOutput = true
+		default:
+			if len(args[i]) > 1 && args[i][0] == '-' {
+				return fmt.Errorf("unknown flag %q", args[i])
+			}
+			return fmt.Errorf("unexpected argument: %s", args[i])
+		}
+	}
+
+	cfg, err := loop.BuildRecoverConfig(cwd)
+	if err != nil {
+		return fmt.Errorf("build recover config: %w", err)
+	}
+
+	plan := loop.EvaluateRecover(cfg)
+	execErrors := loop.ExecuteRecover(cwd, plan)
+
+	// Remove snapshot after recovery
+	if err := loop.RemoveSnapshot(cwd); err != nil {
+		execErrors = append(execErrors, fmt.Sprintf("remove snapshot: %v", err))
+	}
+
+	if jsonOutput {
+		report := struct {
+			Summary loop.RecoverSummary `json:"summary"`
+			Actions []loop.RecoverAction `json:"actions"`
+			Errors  []string            `json:"errors,omitempty"`
+		}{
+			Summary: plan.Summary,
+			Actions: plan.Actions,
+			Errors:  execErrors,
+		}
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal report: %w", err)
+		}
+		fmt.Println(string(data))
+	} else {
+		fmt.Println("[RECOVER] Recovery complete.")
+		fmt.Printf("  Worktrees removed: %d\n", plan.Summary.WorktreesRemoved)
+		fmt.Printf("  Branches deleted:  %d\n", plan.Summary.BranchesDeleted)
+		fmt.Printf("  Stories reset:     %d\n", plan.Summary.StoriesReset)
+		fmt.Printf("  Stories delivered:  %d (needs PM review)\n", plan.Summary.StoriesDelivered)
+		fmt.Printf("  Orphan worktrees:  %d\n", plan.Summary.OrphanWorktrees)
+		if len(execErrors) > 0 {
+			fmt.Printf("  Errors: %d\n", len(execErrors))
+			for _, e := range execErrors {
+				fmt.Printf("    - %s\n", e)
+			}
+		}
+	}
+
 	return nil
 }
 

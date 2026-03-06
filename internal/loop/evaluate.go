@@ -50,10 +50,10 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 		}
 	}
 
-	actionable := cfg.Ready + cfg.Delivered
-	total := actionable + cfg.InProgress + cfg.Blocked
+	actionable := cfg.Ready
+	total := actionable + cfg.InProgress + cfg.Blocked + cfg.Delivered
 
-	// All work complete (nothing anywhere)
+	// All dev work complete (total==0)
 	if total == 0 {
 		return StopDecision{
 			Allow:        true,
@@ -63,11 +63,11 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 		}
 	}
 
-	// All remaining work is blocked
-	if actionable == 0 && cfg.InProgress == 0 && cfg.Blocked > 0 {
+	// No dev work remaining (only delivered/blocked items)
+	if actionable == 0 && cfg.InProgress == 0 {
 		return StopDecision{
 			Allow:        true,
-			Reason:       "All remaining work is blocked",
+			Reason:       "No actionable development work remains",
 			RemoveState:  true,
 			NewIteration: nextIter,
 		}

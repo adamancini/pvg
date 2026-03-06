@@ -28,6 +28,7 @@ var defaults = map[string]string{
 	"workflow.exit_rules":      "blocked:open,in_progress;rejected:in_progress",
 	"workflow.custom_statuses": "delivered,review,rejected",
 	"architecture.c4":          "false",
+	"loop.persist_across_sessions": "false",
 }
 
 // Run handles the `pvg settings` command.

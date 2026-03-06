@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/paivot-ai/pvg/internal/loop"
+	"github.com/paivot-ai/pvg/internal/settings"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
 )
 
@@ -121,7 +122,8 @@ func checkLoop(cwd string) error {
 
 	if decision.Allow {
 		fmt.Fprintf(os.Stderr, "[LOOP] %s\n", decision.Reason)
-		if decision.RemoveState {
+		persist := isLoopPersistEnabled(cwd)
+		if decision.RemoveState || !persist {
 			_ = loop.RemoveState(cwd)
 		}
 		return nil
@@ -159,6 +161,13 @@ func checkLoop(cwd string) error {
 
 	fmt.Println(string(data))
 	return nil
+}
+
+// isLoopPersistEnabled checks if loop state should persist across sessions.
+func isLoopPersistEnabled(cwd string) bool {
+	path := filepath.Join(cwd, ".vault", "knowledge", ".settings.yaml")
+	s := settings.LoadFile(path)
+	return s["loop.persist_across_sessions"] == "true"
 }
 
 // buildContinuationPrompt creates the prompt for the next loop iteration.

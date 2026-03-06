@@ -11,6 +11,8 @@ pvg hook session-start       # Load vault context at session start
 pvg guard                    # PreToolUse scope guard (reads JSON from stdin)
 pvg seed [--force]           # Seed vault with agent prompts and conventions
 pvg loop setup --all         # Start unattended execution loop
+pvg loop snapshot            # Checkpoint active agent/worktree state
+pvg loop recover             # Clean up after context loss
 pvg version                  # Print version
 ```
 
@@ -96,6 +98,9 @@ pvg loop setup --epic PROJ-a1b          # Target a specific epic
 pvg loop setup --all --max 25           # Limit iterations
 pvg loop status                         # Show loop state
 pvg loop cancel                         # Cancel active loop
+pvg loop snapshot                       # Checkpoint active agent/worktree state
+pvg loop snapshot --agent ID=TYPE       # Include agent assignments
+pvg loop recover                        # Clean up after context loss
 ```
 
 ### Dispatcher mode
@@ -140,7 +145,7 @@ internal/
   governance/          Vault seeding with vlt lock
   guard/               Scope guard (system vault, project vault, dispatcher, FSM)
   lifecycle/           Session hooks (start, pre-compact, stop, end, user-prompt, subagent)
-  loop/                Execution loop state machine (setup, evaluate, cancel)
+  loop/                Execution loop (setup, evaluate, cancel, snapshot, recover)
   settings/            Project settings (YAML read/write)
   vaultcfg/            Vault discovery and configuration
 ```

@@ -137,6 +137,11 @@ func runND(args ...string) ([]ndIssue, error) {
 	return issues, nil
 }
 
+// QueryInProgress returns all in-progress issues from nd.
+func QueryInProgress() ([]ndIssue, error) {
+	return runND("list", "--status", "in_progress", "--json")
+}
+
 // hasLabel checks if a label exists in a slice (case-insensitive).
 func hasLabel(labels []string, target string) bool {
 	for _, l := range labels {
