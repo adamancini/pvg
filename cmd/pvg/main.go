@@ -31,7 +31,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/paivot-ai/pvg/internal/analytics"
 	"github.com/paivot-ai/pvg/internal/dispatcher"
 	"github.com/paivot-ai/pvg/internal/governance"
 	"github.com/paivot-ai/pvg/internal/guard"
@@ -604,7 +603,11 @@ func runTelemetry(args []string) error {
 		}
 		stderr := args[3]
 		// Silent failure -- don't interrupt the agent's workflow
-		_ = analytics.LogNdError(cwd, command, exitCode, stderr)
+		// TODO: implement nd error telemetry/analytics
+		_ = cwd
+		_ = command
+		_ = exitCode
+		_ = stderr
 		return nil
 	default:
 		return fmt.Errorf("unknown telemetry subcommand %q", args[0])
