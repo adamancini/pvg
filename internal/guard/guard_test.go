@@ -308,3 +308,172 @@ func TestCheckFilePath_BlocksRelativeProjectVaultPath(t *testing.T) {
 		t.Errorf("expected blocked for relative path to project vault, got allowed")
 	}
 }
+
+// --- Issue tracker (.vault/issues/) tests ---
+
+func TestCheckFilePath_BlocksProjectIssues(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Edit",
+		ToolInput: ToolInput{FilePath: testProjectRoot + "/.vault/issues/PROJ-001.md"},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for .vault/issues/ edit, got allowed")
+	}
+	if result.Reason != projectIssuesBlockMsg {
+		t.Errorf("unexpected reason: %s", result.Reason)
+	}
+}
+
+func TestCheckFilePath_BlocksProjectIssuesWrite(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Write",
+		ToolInput: ToolInput{FilePath: testProjectRoot + "/.vault/issues/PROJ-002.md"},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for .vault/issues/ write, got allowed")
+	}
+}
+
+func TestCheckFilePath_AllowsOtherVaultPaths(t *testing.T) {
+	// Files outside .vault/knowledge/ and .vault/issues/ should be allowed
+	input := HookInput{
+		ToolName:  "Edit",
+		ToolInput: ToolInput{FilePath: testProjectRoot + "/.vault/.dispatcher-state.json"},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected allowed for .vault/.dispatcher-state.json, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_AllowsNdCommands(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd create --title="New issue" --description="Test"`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected nd command allowed, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_AllowsNdUpdate(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd update PROJ-001 --status=in_progress`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected nd update allowed, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_AllowsNdClose(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd close PROJ-001 PROJ-002`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected nd close allowed, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_BlocksProjectIssuesRedirect(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `cat > ` + testProjectRoot + `/.vault/issues/PROJ-001.md << 'EOF'
+---
+status: pending
+---
+content
+EOF`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for cat > .vault/issues/, got allowed")
+	}
+	if result.Reason != projectIssuesBlockMsg {
+		t.Errorf("unexpected reason: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_BlocksProjectIssuesCp(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `cp /tmp/issue.md ` + testProjectRoot + `/.vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for cp to .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksProjectIssuesMv(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `mv /tmp/issue.md ` + testProjectRoot + `/.vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for mv to .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksProjectIssuesSedInPlace(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `sed -i 's/pending/in_progress/' ` + testProjectRoot + `/.vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for sed -i on .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksProjectIssuesRm(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `rm ` + testProjectRoot + `/.vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for rm on .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksProjectIssuesTee(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `echo "new content" | tee ` + testProjectRoot + `/.vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for tee to .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksPythonWriteToIssues(t *testing.T) {
+	cmd := `python3 -c 'open("` + testProjectRoot + `/.vault/issues/PROJ-001.md","w").write("pwned")'`
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: cmd},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for python3 -c write to .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_AllowsReadFromIssues(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `cat ` + testProjectRoot + `/.vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected read from .vault/issues/ allowed, got blocked: %s", result.Reason)
+	}
+}

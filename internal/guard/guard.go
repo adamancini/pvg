@@ -64,7 +64,7 @@ type Result struct {
 }
 
 // Check reads hook input and returns whether the operation should be allowed.
-// projectRoot is the CWD of the invoking process (used to resolve .vault/knowledge/).
+// projectRoot is the CWD of the invoking process (used to resolve .vault/knowledge/ and .vault/issues/).
 func Check(vaultDir, projectRoot string, input HookInput) Result {
 	switch input.ToolName {
 	case "Edit", "Write":
@@ -74,12 +74,18 @@ func Check(vaultDir, projectRoot string, input HookInput) Result {
 		if r := checkProjectVault(projectRoot, input.ToolInput.FilePath); !r.Allowed {
 			return r
 		}
+		if r := checkProjectIssues(projectRoot, input.ToolInput.FilePath); !r.Allowed {
+			return r
+		}
 		return CheckDispatcher(projectRoot, input)
 	case "Bash":
 		if r := checkBashCommand(vaultDir, input.ToolInput.Command); !r.Allowed {
 			return r
 		}
 		if r := checkBashProjectVault(projectRoot, input.ToolInput.Command); !r.Allowed {
+			return r
+		}
+		if r := checkBashProjectIssues(projectRoot, input.ToolInput.Command); !r.Allowed {
 			return r
 		}
 		if r := CheckFSM(projectRoot, input.ToolInput.Command); !r.Allowed {
@@ -236,8 +242,15 @@ const projectVaultBlockMsg = "BLOCKED: Direct modification of project vault. " +
 	"Use vlt vault=\"<path>\" commands instead. " +
 	"vlt provides locking for concurrent agent safety."
 
+const projectIssuesBlockMsg = "BLOCKED: Direct modification of issue tracker. " +
+	"Use nd commands instead (nd create, nd update, nd close). " +
+	"nd provides locking and FSM validation for concurrent agent safety."
+
 // projectVaultPath is the relative path segment that identifies project vault files.
 const projectVaultPath = "/.vault/knowledge/"
+
+// projectIssuesPath is the relative path segment that identifies project issue files.
+const projectIssuesPath = "/.vault/issues/"
 
 func checkProjectVault(projectRoot, filePath string) Result {
 	if filePath == "" || projectRoot == "" {
@@ -310,6 +323,78 @@ func checkBashProjectVault(projectRoot, command string) Result {
 	// Detect interpreter-based writes targeting project vault.
 	if containsInterpreterWrite(command, vaultSegment) {
 		return Result{Allowed: false, Reason: projectVaultBlockMsg}
+	}
+
+	return Result{Allowed: true}
+}
+
+func checkProjectIssues(projectRoot, filePath string) Result {
+	if filePath == "" || projectRoot == "" {
+		return Result{Allowed: true}
+	}
+
+	normRoot := normalizePath(projectRoot)
+
+	// Resolve relative paths against project root before comparison.
+	resolvedFile := filePath
+	if !filepath.IsAbs(filePath) {
+		resolvedFile = filepath.Join(normRoot, filePath)
+	}
+	normFile := normalizePath(resolvedFile)
+
+	issuesPrefix := normRoot + projectIssuesPath
+	if !strings.HasPrefix(normFile, issuesPrefix) {
+		// Also check cleaned but non-resolved path (file may not exist)
+		cleanFile := filepath.Clean(resolvedFile)
+		if !strings.HasPrefix(cleanFile, issuesPrefix) {
+			return Result{Allowed: true}
+		}
+	}
+
+	return Result{Allowed: false, Reason: projectIssuesBlockMsg}
+}
+
+func checkBashProjectIssues(projectRoot, command string) Result {
+	if command == "" || projectRoot == "" {
+		return Result{Allowed: true}
+	}
+
+	trimmed := strings.TrimSpace(command)
+	// nd commands are the intended mechanism -- always allow
+	if strings.HasPrefix(trimmed, "nd ") || strings.HasPrefix(trimmed, "nd\t") {
+		return Result{Allowed: true}
+	}
+
+	normRoot := normalizePath(projectRoot)
+	issuesSegment := normRoot + projectIssuesPath
+
+	if !strings.Contains(command, issuesSegment) {
+		return Result{Allowed: true}
+	}
+
+	// Check redirect operators: protected path must be after the operator.
+	for _, op := range []string{">>", ">"} {
+		if idx := strings.Index(command, op); idx >= 0 {
+			if strings.Contains(command[idx:], issuesSegment) {
+				return Result{Allowed: false, Reason: projectIssuesBlockMsg}
+			}
+		}
+	}
+
+	// Check write commands with protected path.
+	writePatterns := []string{
+		"tee ", "cp ", "mv ", "cat >", "mkdir ", "rm ",
+		"sed -i", "perl -pi", "install ", "rsync ", "dd ", "patch ",
+	}
+	for _, pattern := range writePatterns {
+		if strings.Contains(command, pattern) {
+			return Result{Allowed: false, Reason: projectIssuesBlockMsg}
+		}
+	}
+
+	// Detect interpreter-based writes targeting project issues.
+	if containsInterpreterWrite(command, issuesSegment) {
+		return Result{Allowed: false, Reason: projectIssuesBlockMsg}
 	}
 
 	return Result{Allowed: true}
