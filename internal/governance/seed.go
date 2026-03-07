@@ -85,6 +85,9 @@ func Seed(force bool, pluginDir string) error {
 		{"business-analyst", "Business Analyst Agent"},
 		{"anchor", "Anchor Agent"},
 		{"retro", "Retro Agent"},
+		{"ba-challenger", "BA Challenger Agent"},
+		{"designer-challenger", "Designer Challenger Agent"},
+		{"architect-challenger", "Architect Challenger Agent"},
 	}
 
 	for _, agent := range agents {
@@ -411,15 +414,30 @@ Full D&F: BLT agents produce the three documents sequentially.
   2. Check output for QUESTIONS_FOR_USER block
      - If present: relay to user via AskUserQuestion, resume agent with answers, repeat
      - If absent: BUSINESS.md is done
-  3. Spawn Designer with BUSINESS.md content
-  4. Same relay loop until DESIGN.md is produced
-  5. Spawn Architect with BUSINESS.md + DESIGN.md
-  6. Same relay loop until ARCHITECTURE.md is produced
+  3. SPECIALIST REVIEW (if dnf.specialist_review is enabled):
+     a. Spawn ba-challenger with BUSINESS.md + user context + iteration=1
+     b. Parse output for REVIEW_RESULT:
+        - APPROVED: proceed to step 4
+        - REJECTED: re-spawn BA with FEEDBACK_FOR_CREATOR content, then
+          re-spawn ba-challenger with iteration+1. Repeat up to dnf.max_iterations
+          (default 3). If still REJECTED after max iterations, relay remaining
+          ISSUES to user via AskUserQuestion and let user decide: fix or proceed.
+  4. Spawn Designer with BUSINESS.md content
+  5. Same relay loop until DESIGN.md is produced
+  6. SPECIALIST REVIEW (if enabled):
+     Same loop as step 3, but with designer-challenger reviewing DESIGN.md
+     against BUSINESS.md + user context.
+  7. Spawn Architect with BUSINESS.md + DESIGN.md
+  8. Same relay loop until ARCHITECTURE.md is produced
+  9. SPECIALIST REVIEW (if enabled):
+     Same loop as step 3, but with architect-challenger reviewing ARCHITECTURE.md
+     against BUSINESS.md + DESIGN.md + user context.
 
 Light D&F (brownfield, or user requests "light"/"quick"):
   Same BLT sequence, but agents draft with fewer questioning rounds using existing
   codebase and vault context. The agents STILL produce the files. You do NOT write
   them yourself. Light means "fewer rounds", not "bypass agents".
+  Specialist review still applies if dnf.specialist_review is enabled.
 
 Post-D&F: Two-step backlog creation with adversarial review.
   1. Spawn Sr PM to create the backlog from all three D&F documents.
@@ -431,6 +449,48 @@ Post-D&F: Two-step backlog creation with adversarial review.
      The Anchor returns APPROVED or REJECTED -- no conditional pass.
      If REJECTED: relay the gaps to the Sr PM, re-spawn to fix, re-submit to Anchor.
      Execution MUST NOT begin until the Anchor returns APPROVED.
+
+### Specialist Review Loop (dispatcher procedure)
+
+When dnf.specialist_review is enabled, run this after each BLT document:
+
+  1. Check setting: pvg settings dnf.specialist_review
+     If false: skip to next BLT step.
+
+  2. Read max iterations: pvg settings dnf.max_iterations (default 3)
+     Set iteration = 1.
+
+  3. Spawn the challenger with:
+     - Document content (e.g. BUSINESS.md)
+     - Upstream documents (e.g. user context for BA, BUSINESS.md for Designer)
+     - "This is iteration N of max_iter"
+     - If iteration > 1: include previous FEEDBACK_FOR_CREATOR
+
+  4. Parse challenger output for REVIEW_RESULT:
+
+     APPROVED -> exit loop, proceed to next BLT step.
+
+     REJECTED ->
+       If iteration < max_iter:
+         Re-spawn creator (BA/Designer/Architect) with:
+           "SPECIALIST REVIEW FEEDBACK (iteration N/max_iter):
+            [paste FEEDBACK_FOR_CREATOR content from challenger]"
+         Wait for creator to revise the document.
+         Increment iteration. Go to step 3.
+       Else (max iterations exhausted):
+         Relay to user via AskUserQuestion:
+           "Specialist review: [challenger] rejected [document] after
+            [max_iter] iterations. Remaining issues:
+            [ISSUES from last rejection]
+            Options: (a) provide guidance for another attempt,
+            (b) proceed without resolving these issues"
+         If user chooses (a): re-spawn creator with user guidance, retry once more.
+         If user chooses (b): proceed to next BLT step.
+
+  Challenger-to-creator mapping:
+    ba-challenger        -> business-analyst (BUSINESS.md)
+    designer-challenger  -> designer (DESIGN.md)
+    architect-challenger -> architect (ARCHITECTURE.md)
 
 When D&F is not needed (skip entirely):
   - User explicitly says they do not want D&F
