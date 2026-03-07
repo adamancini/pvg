@@ -223,7 +223,7 @@ func checkBashCommand(vaultDir, command string) Result {
 
 // interpreterPrefixes lists interpreter command prefixes that can write files.
 var interpreterPrefixes = []string{
-	"python3 -c", "python -c", "python3 -c", "python2 -c",
+	"python3 -c", "python -c", "python2 -c",
 	"ruby -e", "node -e", "perl -e", "lua -e",
 }
 

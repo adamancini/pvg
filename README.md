@@ -47,6 +47,18 @@ tar xzf /tmp/pvg_*_darwin_amd64.tar.gz -C ~/go/bin
 # Linux (amd64)
 gh release download -R paivot-ai/pvg -p '*linux_amd64*' -D /tmp
 tar xzf /tmp/pvg_*_linux_amd64.tar.gz -C ~/go/bin
+
+# Linux (arm64)
+gh release download -R paivot-ai/pvg -p '*linux_arm64*' -D /tmp
+tar xzf /tmp/pvg_*_linux_arm64.tar.gz -C ~/go/bin
+
+# Windows (amd64)
+gh release download -R paivot-ai/pvg -p '*windows_amd64*' -D %TEMP%
+tar xzf %TEMP%/pvg_*_windows_amd64.zip -C $env:GOPATH\bin
+
+# Windows (arm64)
+gh release download -R paivot-ai/pvg -p '*windows_arm64*' -D %TEMP%
+tar xzf %TEMP%/pvg_*_windows_arm64.zip -C $env:GOPATH\bin
 ```
 
 ### From source (requires Go 1.24+)

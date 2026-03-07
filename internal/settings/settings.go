@@ -19,6 +19,7 @@ var defaults = map[string]string{
 	"auto_capture":                 "true",
 	"staleness_days":               "30",
 	"stack_detection":              "false",
+	"bug_fast_track":               "false",
 	"project_vault_git":            "ask",
 	"default_scope":                "system",
 	"proposal_expiry_days":         "30",
