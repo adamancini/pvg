@@ -20,6 +20,7 @@
 //	pvg loop snapshot            # Checkpoint agent/worktree state
 //	pvg loop recover             # Clean up after context loss
 //	pvg fetch-vlt-skill [--force] # Download and install vlt skill
+//	pvg verify [path...] [flags] # Scan for stubs, thin files, TODOs
 //	pvg version                  # Print version
 package main
 
@@ -39,6 +40,7 @@ import (
 	"github.com/paivot-ai/pvg/internal/loop"
 	"github.com/paivot-ai/pvg/internal/settings"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
+	"github.com/paivot-ai/pvg/internal/verify"
 )
 
 // Set at build time via -ldflags "-X main.version=..."
@@ -106,6 +108,8 @@ func main() {
 		err = runDispatcher(args)
 	case "settings":
 		err = settings.Run(args)
+	case "verify":
+		err = runVerify(args)
 	case "fetch-vlt-skill":
 		force := len(args) > 0 && (args[0] == "--force" || args[0] == "-f")
 		err = lifecycle.FetchVltSkill(force)
@@ -148,6 +152,7 @@ Commands:
   dispatcher on|off|status  Manage dispatcher mode
   seed [--force]         Seed vault with agent prompts and conventions
   settings [key=value]   View or set project settings
+  verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
   help                   Show this help`)
@@ -560,6 +565,80 @@ func loopRecover(cwd string, args []string) error {
 		}
 	}
 
+	return nil
+}
+
+func runVerify(args []string) error {
+	opts := verify.DefaultOptions()
+	format := "text"
+	var paths []string
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(os.Stderr, `pvg verify -- scan source files for quality issues
+
+Usage: pvg verify [path...] [flags]
+
+Flags:
+  --format text|json    Output format (default: text)
+  --min-lines N         Minimum lines of code for substance check (default: 10)
+  --include-tests       Include test files in scan (default: skip them)
+  --help, -h            Show this help
+
+If no paths given, scans the current directory recursively.
+Skips test files, vendor/, node_modules/, .git/, .vault/ by default.
+
+Exit code 0 if clean, 1 if issues found.`)
+			return nil
+		case "--format":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--format requires an argument (text or json)")
+			}
+			i++
+			format = args[i]
+			if format != "text" && format != "json" {
+				return fmt.Errorf("--format must be text or json")
+			}
+		case "--min-lines":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--min-lines requires a number")
+			}
+			i++
+			n, err := strconv.Atoi(args[i])
+			if err != nil || n < 1 {
+				return fmt.Errorf("--min-lines must be a positive integer")
+			}
+			opts.MinLines = n
+		case "--include-tests":
+			opts.IncludeTests = true
+		default:
+			if len(args[i]) > 1 && args[i][0] == '-' {
+				return fmt.Errorf("unknown flag %q (see pvg verify --help)", args[i])
+			}
+			paths = append(paths, args[i])
+		}
+	}
+
+	result, err := verify.Scan(paths, opts)
+	if err != nil {
+		return err
+	}
+
+	switch format {
+	case "json":
+		j, err := verify.FormatJSON(result)
+		if err != nil {
+			return err
+		}
+		fmt.Println(j)
+	default:
+		fmt.Print(verify.FormatText(result))
+	}
+
+	if !result.Passed {
+		os.Exit(1)
+	}
 	return nil
 }
 
