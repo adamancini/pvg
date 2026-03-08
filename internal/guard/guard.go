@@ -91,6 +91,9 @@ func Check(vaultDir, projectRoot string, input HookInput) Result {
 		if r := CheckFSM(projectRoot, input.ToolInput.Command); !r.Allowed {
 			return r
 		}
+		if r := CheckMergeGate(projectRoot, input.ToolInput.Command); !r.Allowed {
+			return r
+		}
 		return CheckDispatcher(projectRoot, input)
 	default:
 		return Result{Allowed: true}

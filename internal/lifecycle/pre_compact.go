@@ -76,6 +76,26 @@ func outputDispatcherReminder() {
 		return
 	}
 	fmt.Print(staticDispatcherReminder())
+	fmt.Print(staticLoopRecoveryReminder())
+}
+
+// staticLoopRecoveryReminder returns the post-compaction loop recovery instructions.
+func staticLoopRecoveryReminder() string {
+	return `
+[LOOP RECOVERY -- RUN IMMEDIATELY AFTER COMPACTION]
+After context compaction, you have lost track of running agents and worktrees.
+Before touching git or spawning new agents, run:
+
+  pvg loop recover
+
+This command:
+1. Removes all orphaned agent worktrees and branches
+2. Resets orphaned in-progress stories to open (delivered stories preserved)
+3. Outputs a recovery summary showing what is ready, delivered, and needs attention
+
+DO NOT manually inspect or merge branches after compaction. DO NOT reconstruct
+state from the git tree. pvg loop recover is the ONLY safe way to resume.
+`
 }
 
 // staticDispatcherReminder returns the dispatcher rules block for pre-compact injection.
