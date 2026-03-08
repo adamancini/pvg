@@ -66,7 +66,7 @@ func SessionEnd() error {
 		f, ferr := os.OpenFile(projectNote, os.O_APPEND|os.O_WRONLY, 0644)
 		if ferr == nil {
 			_, _ = f.WriteString(entry)
-			f.Close()
+			_ = f.Close()
 		}
 	}
 

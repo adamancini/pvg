@@ -134,8 +134,10 @@ func TestOutputDispatcherReminder_NoopWhenInactive(t *testing.T) {
 	// We can't easily capture stdout here, but at minimum verify no panic.
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	outputDispatcherReminder() // should not panic
 }
@@ -257,7 +259,7 @@ func TestDetectStack_EmptyDir(t *testing.T) {
 
 func TestDetectStack_GoProject(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "go" {
 		t.Errorf("expected [go], got %v", stacks)
@@ -266,7 +268,7 @@ func TestDetectStack_GoProject(t *testing.T) {
 
 func TestDetectStack_RustProject(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "rust" {
 		t.Errorf("expected [rust], got %v", stacks)
@@ -275,7 +277,7 @@ func TestDetectStack_RustProject(t *testing.T) {
 
 func TestDetectStack_NodeProject(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"test"}`), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"test"}`), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "node" {
 		t.Errorf("expected [node], got %v", stacks)
@@ -284,7 +286,7 @@ func TestDetectStack_NodeProject(t *testing.T) {
 
 func TestDetectStack_TypeScriptProject(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"devDependencies":{"typescript":"^5.0"}}`), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"devDependencies":{"typescript":"^5.0"}}`), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 2 || stacks[0] != "node" || stacks[1] != "typescript" {
 		t.Errorf("expected [node, typescript], got %v", stacks)
@@ -293,7 +295,7 @@ func TestDetectStack_TypeScriptProject(t *testing.T) {
 
 func TestDetectStack_PythonPyproject(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "python" {
 		t.Errorf("expected [python], got %v", stacks)
@@ -302,7 +304,7 @@ func TestDetectStack_PythonPyproject(t *testing.T) {
 
 func TestDetectStack_PythonRequirements(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("flask\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("flask\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "python" {
 		t.Errorf("expected [python], got %v", stacks)
@@ -311,7 +313,7 @@ func TestDetectStack_PythonRequirements(t *testing.T) {
 
 func TestDetectStack_ElixirProject(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "mix.exs"), []byte("defmodule Test do\nend\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "mix.exs"), []byte("defmodule Test do\nend\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "elixir" {
 		t.Errorf("expected [elixir], got %v", stacks)
@@ -320,7 +322,7 @@ func TestDetectStack_ElixirProject(t *testing.T) {
 
 func TestDetectStack_CSharpProject_Csproj(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "MyApp.csproj"), []byte("<Project />\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "MyApp.csproj"), []byte("<Project />\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "csharp" {
 		t.Errorf("expected [csharp], got %v", stacks)
@@ -329,7 +331,7 @@ func TestDetectStack_CSharpProject_Csproj(t *testing.T) {
 
 func TestDetectStack_CSharpProject_Sln(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "MyApp.sln"), []byte("Solution\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "MyApp.sln"), []byte("Solution\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "csharp" {
 		t.Errorf("expected [csharp], got %v", stacks)
@@ -338,9 +340,9 @@ func TestDetectStack_CSharpProject_Sln(t *testing.T) {
 
 func TestDetectStack_MonorepoMultipleStacks(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"devDependencies":{"typescript":"^5"}}`), 0644)
-	os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"devDependencies":{"typescript":"^5"}}`), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 4 {
 		t.Errorf("expected 4 stacks (go, node, typescript, python), got %v", stacks)
@@ -349,7 +351,7 @@ func TestDetectStack_MonorepoMultipleStacks(t *testing.T) {
 
 func TestDetectStack_JavaProject(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project />\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<project />\n"), 0644)
 	stacks := detectStack(dir)
 	if len(stacks) != 1 || stacks[0] != "java" {
 		t.Errorf("expected [java], got %v", stacks)

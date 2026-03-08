@@ -167,7 +167,7 @@ func readMaxNotesSetting(cwd string) int {
 		if strings.HasPrefix(line, "session_start_max_notes:") {
 			val := strings.TrimSpace(strings.TrimPrefix(line, "session_start_max_notes:"))
 			n := 10
-			fmt.Sscanf(val, "%d", &n)
+			_, _ = fmt.Sscanf(val, "%d", &n)
 			if n > 0 {
 				return n
 			}
