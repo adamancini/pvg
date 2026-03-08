@@ -11,6 +11,7 @@ import (
 
 	"github.com/RamXX/vlt"
 
+	"github.com/paivot-ai/pvg/internal/loop"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
 )
 
@@ -31,6 +32,9 @@ func SessionStart() error {
 	if input.CWD == "" {
 		input.CWD, _ = os.Getwd()
 	}
+
+	// 1b. Clean up stale loop state if persist is disabled (the default)
+	cleanupStaleLoop(input.CWD)
 
 	// 2. Detect project name
 	project := detectProject(input.CWD)
@@ -280,6 +284,18 @@ func readStackDetectionSetting(cwd string) bool {
 		}
 	}
 	return false
+}
+
+// cleanupStaleLoop removes loop state left over from a previous session
+// when loop.persist_across_sessions is false (the default).
+func cleanupStaleLoop(cwd string) {
+	if !loop.IsActive(cwd) {
+		return
+	}
+	if isLoopPersistEnabled(cwd) {
+		return
+	}
+	_ = loop.RemoveState(cwd)
 }
 
 func staticOperatingMode() string {

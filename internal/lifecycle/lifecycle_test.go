@@ -417,3 +417,61 @@ We chose Go for the pvg CLI because it compiles to a single binary.
 	knowledgeDir := filepath.Join(dir, ".vault", "knowledge")
 	outputProjectKnowledge(knowledgeDir, dir)
 }
+
+func TestCleanupStaleLoop_RemovesWhenPersistDisabled(t *testing.T) {
+	dir := t.TempDir()
+	vaultDir := filepath.Join(dir, ".vault")
+	if err := os.MkdirAll(vaultDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write an active loop state file
+	stateContent := `{"active":true,"mode":"all","iteration":5,"max_iterations":50,"consecutive_waits":0,"max_consecutive_waits":3,"wait_iterations":0,"started_at":"2026-03-06T18:00:00Z"}`
+	statePath := filepath.Join(vaultDir, ".piv-loop-state.json")
+	if err := os.WriteFile(statePath, []byte(stateContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// No settings file = persist disabled (default); cleanup is silent
+	cleanupStaleLoop(dir)
+
+	// State file should be gone
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Error("expected loop state file to be removed, but it still exists")
+	}
+}
+
+func TestCleanupStaleLoop_PreservesWhenPersistEnabled(t *testing.T) {
+	dir := t.TempDir()
+	vaultDir := filepath.Join(dir, ".vault")
+	knowledgeDir := filepath.Join(vaultDir, "knowledge")
+	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write an active loop state file
+	stateContent := `{"active":true,"mode":"all","iteration":5,"max_iterations":50,"consecutive_waits":0,"max_consecutive_waits":3,"wait_iterations":0,"started_at":"2026-03-06T18:00:00Z"}`
+	statePath := filepath.Join(vaultDir, ".piv-loop-state.json")
+	if err := os.WriteFile(statePath, []byte(stateContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Enable persist
+	settingsContent := "loop.persist_across_sessions: true\n"
+	if err := os.WriteFile(filepath.Join(knowledgeDir, ".settings.yaml"), []byte(settingsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanupStaleLoop(dir)
+
+	// State file should still exist
+	if _, err := os.Stat(statePath); os.IsNotExist(err) {
+		t.Error("expected loop state file to be preserved, but it was removed")
+	}
+}
+
+func TestCleanupStaleLoop_NoopWhenNoState(t *testing.T) {
+	dir := t.TempDir()
+	// No state file at all -- should not panic
+	cleanupStaleLoop(dir)
+}
