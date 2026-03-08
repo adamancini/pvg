@@ -19,6 +19,7 @@
 //	pvg loop status              # Show loop state
 //	pvg loop snapshot            # Checkpoint agent/worktree state
 //	pvg loop recover             # Clean up after context loss
+//	pvg fetch-vlt-skill [--force] # Download and install vlt skill
 //	pvg version                  # Print version
 package main
 
@@ -105,6 +106,9 @@ func main() {
 		err = runDispatcher(args)
 	case "settings":
 		err = settings.Run(args)
+	case "fetch-vlt-skill":
+		force := len(args) > 0 && (args[0] == "--force" || args[0] == "-f")
+		err = lifecycle.FetchVltSkill(force)
 	case "version", "--version", "-V":
 		fmt.Printf("pvg %s\n", resolvedVersion())
 	case "help", "--help", "-h":
@@ -144,6 +148,7 @@ Commands:
   dispatcher on|off|status  Manage dispatcher mode
   seed [--force]         Seed vault with agent prompts and conventions
   settings [key=value]   View or set project settings
+  fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
   help                   Show this help`)
 }
