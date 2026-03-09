@@ -31,6 +31,7 @@ type RecoverConfig struct {
 	SnapshotStories  []SnapshotEntry
 	CurrentWorktrees []Worktree
 	InProgressIssues []ndIssue
+	Warnings         []string
 }
 
 // RecoverSummary counts what recovery did.
@@ -160,7 +161,8 @@ func BuildRecoverConfig(projectRoot string) (RecoverConfig, error) {
 	// Query nd for in-progress issues
 	issues, err := QueryInProgress()
 	if err != nil {
-		return cfg, fmt.Errorf("query in-progress issues: %w", err)
+		cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("nd state unavailable: %v", err))
+		return cfg, nil
 	}
 	cfg.InProgressIssues = issues
 

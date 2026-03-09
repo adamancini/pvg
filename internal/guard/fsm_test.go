@@ -49,13 +49,16 @@ func TestParseWorkflowConfig_ExitRules(t *testing.T) {
 	}
 }
 
-func TestParseWorkflowConfig_EmptySequence(t *testing.T) {
+func TestParseWorkflowConfig_DefaultSequenceFallback(t *testing.T) {
 	wc := ParseWorkflowConfig(map[string]string{
 		"workflow.fsm":      "true",
 		"workflow.sequence": "",
 	})
-	if len(wc.Sequence) != 0 {
-		t.Errorf("expected empty sequence, got %d", len(wc.Sequence))
+	if len(wc.Sequence) != 5 {
+		t.Errorf("expected default sequence length 5, got %d", len(wc.Sequence))
+	}
+	if wc.Sequence[0] != "open" || wc.Sequence[4] != "closed" {
+		t.Errorf("expected default open..closed sequence, got %v", wc.Sequence)
 	}
 }
 
@@ -260,6 +263,20 @@ func TestParseNdStatusChange_SemicolonChain(t *testing.T) {
 	}
 }
 
+func TestParseNdContractLabelAdd_Update(t *testing.T) {
+	id, labels, found := parseNdContractLabelAdd("nd update PROJ-a3f8 --add-label=delivered")
+	if !found || id != "PROJ-a3f8" || len(labels) != 1 || labels[0] != "delivered" {
+		t.Errorf("unexpected: id=%q labels=%v found=%v", id, labels, found)
+	}
+}
+
+func TestParseNdContractLabelAdd_LabelsAdd(t *testing.T) {
+	id, labels, found := parseNdContractLabelAdd("nd labels add PROJ-a3f8 delivered rejected")
+	if !found || id != "PROJ-a3f8" || len(labels) != 2 || labels[0] != "delivered" || labels[1] != "rejected" {
+		t.Errorf("unexpected: id=%q labels=%v found=%v", id, labels, found)
+	}
+}
+
 // --- Issue status reading ---
 
 func TestReadIssueStatus_ValidFile(t *testing.T) {
@@ -441,5 +458,21 @@ func TestCheckFSM_BackwardAllowed(t *testing.T) {
 	r := CheckFSM(dir, "nd update PROJ-a1b2 --status=open")
 	if !r.Allowed {
 		t.Errorf("expected allowed for backward transition, got blocked: %s", r.Reason)
+	}
+}
+
+func TestCheckFSM_BlocksDeliveredLabelWhenNotInProgress(t *testing.T) {
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "open")
+	r := CheckFSM(dir, "nd labels add PROJ-a1b2 delivered")
+	if r.Allowed {
+		t.Error("expected delivered label blocked while issue is open")
+	}
+}
+
+func TestCheckFSM_AllowsDeliveredLabelFromInProgress(t *testing.T) {
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "in_progress")
+	r := CheckFSM(dir, "nd update PROJ-a1b2 --add-label delivered")
+	if !r.Allowed {
+		t.Errorf("expected delivered label allowed from in_progress, got blocked: %s", r.Reason)
 	}
 }

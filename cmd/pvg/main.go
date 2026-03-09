@@ -13,7 +13,7 @@
 //	pvg hook session-end         # SessionEnd hook
 //	pvg guard                    # PreToolUse scope guard (stdin: JSON)
 //	pvg seed [--force]           # Seed vault with agent prompts
-//	pvg settings [key=value]     # View/set project settings
+//	pvg settings [key|key=value] # View/read/set project settings
 //	pvg loop setup [--all|--epic EPIC_ID] [--max-iterations|--max N]
 //	pvg loop cancel              # Cancel active loop
 //	pvg loop status              # Show loop state
@@ -151,11 +151,23 @@ Commands:
   loop recover           Clean up after context loss
   dispatcher on|off|status  Manage dispatcher mode
   seed [--force]         Seed vault with agent prompts and conventions
-  settings [key=value]   View or set project settings
+  settings [key|key=value]  View, read, or set project settings
   verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
-  help                   Show this help`)
+	help                   Show this help`)
+}
+
+func ensureNDInitialized(cwd string) error {
+	ndConfigPath := filepath.Join(cwd, ".vault", ".nd.yaml")
+	_, err := os.Stat(ndConfigPath)
+	if err == nil {
+		return nil
+	}
+	if os.IsNotExist(err) {
+		return fmt.Errorf("nd is not initialized in this repo (.vault/.nd.yaml missing); initialize nd before using Paivot execution commands")
+	}
+	return fmt.Errorf("check nd initialization: %w", err)
 }
 
 func runHook(name string) error {
@@ -195,13 +207,12 @@ func runGuard() error {
 		return nil // unreachable, for the compiler
 	}
 
-	// Determine vault directory -- if vault isn't configured, nothing to
-	// protect, so allow. This is intentional: the guard only activates when
-	// a vault is present.
+	// Determine vault directory. If the global Claude vault is unavailable,
+	// keep enforcing project-local protections (.vault/knowledge/, nd FSM,
+	// merge gate) and simply skip system-vault checks.
 	vaultDir, err := vaultcfg.VaultDir()
 	if err != nil {
-		// No vault configured -- nothing to protect.
-		return nil
+		vaultDir = ""
 	}
 
 	// Get project root (CWD) for project vault checks
@@ -361,6 +372,10 @@ func loopSetup(cwd string, args []string) error {
 
 	if mode == "" {
 		return fmt.Errorf("specify --all or --epic EPIC_ID (or pass epic ID as positional arg)")
+	}
+
+	if err := ensureNDInitialized(cwd); err != nil {
+		return err
 	}
 
 	// Idempotent: if already active, report status and return success
@@ -537,13 +552,15 @@ func loopRecover(cwd string, args []string) error {
 
 	if jsonOutput {
 		report := struct {
-			Summary loop.RecoverSummary  `json:"summary"`
-			Actions []loop.RecoverAction `json:"actions"`
-			Errors  []string             `json:"errors,omitempty"`
+			Summary  loop.RecoverSummary  `json:"summary"`
+			Actions  []loop.RecoverAction `json:"actions"`
+			Warnings []string             `json:"warnings,omitempty"`
+			Errors   []string             `json:"errors,omitempty"`
 		}{
-			Summary: plan.Summary,
-			Actions: plan.Actions,
-			Errors:  execErrors,
+			Summary:  plan.Summary,
+			Actions:  plan.Actions,
+			Warnings: cfg.Warnings,
+			Errors:   execErrors,
 		}
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -557,6 +574,12 @@ func loopRecover(cwd string, args []string) error {
 		fmt.Printf("  Stories reset:     %d\n", plan.Summary.StoriesReset)
 		fmt.Printf("  Stories delivered:  %d (needs PM review)\n", plan.Summary.StoriesDelivered)
 		fmt.Printf("  Orphan worktrees:  %d\n", plan.Summary.OrphanWorktrees)
+		if len(cfg.Warnings) > 0 {
+			fmt.Printf("  Warnings: %d\n", len(cfg.Warnings))
+			for _, w := range cfg.Warnings {
+				fmt.Printf("    - %s\n", w)
+			}
+		}
 		if len(execErrors) > 0 {
 			fmt.Printf("  Errors: %d\n", len(execErrors))
 			for _, e := range execErrors {

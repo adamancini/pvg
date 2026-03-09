@@ -247,6 +247,19 @@ func TestCheckBash_BlocksProjectVaultSedInPlace(t *testing.T) {
 	}
 }
 
+func TestCheckBash_BlocksRelativeProjectVaultWrite(t *testing.T) {
+	input := HookInput{
+		ToolName: "Bash",
+		ToolInput: ToolInput{Command: `cat > .vault/knowledge/patterns/test.md << 'EOF'
+content
+EOF`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for relative write to .vault/knowledge/, got allowed")
+	}
+}
+
 // --- Interpreter write detection tests ---
 
 func TestCheckBash_BlocksPython3Write(t *testing.T) {
@@ -381,6 +394,30 @@ func TestCheckBash_AllowsNdClose(t *testing.T) {
 	}
 }
 
+func TestCheck_ProjectVaultStillProtectedWithoutSystemVault(t *testing.T) {
+	dir := setupFSMProject(t, false, "", "")
+	input := HookInput{
+		ToolName:  "Write",
+		ToolInput: ToolInput{FilePath: dir + "/.vault/knowledge/decisions/test.md"},
+	}
+	result := Check("", dir, input)
+	if result.Allowed {
+		t.Errorf("expected project vault write blocked without system vault, got allowed")
+	}
+}
+
+func TestCheck_FSMStillProtectedWithoutSystemVault(t *testing.T) {
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "open")
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd close PROJ-a1b2`},
+	}
+	result := Check("", dir, input)
+	if result.Allowed {
+		t.Errorf("expected nd close blocked without system vault, got allowed")
+	}
+}
+
 func TestCheckBash_BlocksProjectIssuesRedirect(t *testing.T) {
 	input := HookInput{
 		ToolName: "Bash",
@@ -419,6 +456,17 @@ func TestCheckBash_BlocksProjectIssuesMv(t *testing.T) {
 	result := Check(testVaultDir, testProjectRoot, input)
 	if result.Allowed {
 		t.Errorf("expected blocked for mv to .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksRelativeProjectIssuesWrite(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `cp /tmp/issue.md .vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for relative write to .vault/issues/, got allowed")
 	}
 }
 

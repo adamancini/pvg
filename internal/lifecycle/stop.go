@@ -170,15 +170,15 @@ func checkLoop(cwd string) error {
 }
 
 // isLoopPersistEnabled checks if loop state should persist across sessions.
-// Default is true (loop survives session boundaries for background agent flow).
+// Default is false (stale loop state is removed unless explicitly preserved).
 func isLoopPersistEnabled(cwd string) bool {
 	path := filepath.Join(cwd, ".vault", "knowledge", ".settings.yaml")
 	s := settings.LoadFile(path)
 	v, ok := s["loop.persist_across_sessions"]
 	if !ok {
-		return true // default
+		return false // default
 	}
-	return v != "false"
+	return v == "true"
 }
 
 // BuildContinuationPrompt creates the prompt for the next loop iteration.

@@ -31,11 +31,14 @@ var defaults = map[string]string{
 	"dnf.specialist_review":        "false",
 	"dnf.max_iterations":           "3",
 	"architecture.c4":              "false",
-	"loop.persist_across_sessions": "true",
+	"loop.persist_across_sessions": "false",
 }
+
+var execCommand = exec.Command
 
 // Run handles the `pvg settings` command.
 // With no args: display current settings.
+// With a single key: print its value.
 // With key=value args: set settings.
 func Run(args []string) error {
 	cwd, err := os.Getwd()
@@ -47,6 +50,10 @@ func Run(args []string) error {
 
 	if len(args) == 0 {
 		return showSettings(path)
+	}
+
+	if len(args) == 1 && !strings.Contains(args[0], "=") {
+		return showSetting(path, strings.TrimSpace(args[0]))
 	}
 
 	return setSettings(path, args)
@@ -81,6 +88,25 @@ func showSettings(path string) error {
 	}
 
 	return nil
+}
+
+func showSetting(path, key string) error {
+	if key == "" {
+		return fmt.Errorf("missing setting key")
+	}
+
+	settings := loadSettings(path)
+	if val, ok := settings[key]; ok {
+		fmt.Println(val)
+		return nil
+	}
+
+	if val, ok := defaults[key]; ok {
+		fmt.Println(val)
+		return nil
+	}
+
+	return fmt.Errorf("unknown setting %q", key)
 }
 
 func setSettings(path string, args []string) error {
@@ -171,14 +197,37 @@ func LoadFile(path string) map[string]string {
 	return loadSettings(path)
 }
 
+// Default returns the built-in value for a known setting key.
+func Default(key string) string {
+	return defaults[key]
+}
+
 // syncNdConfig propagates workflow settings to nd. Non-fatal on failure.
 func syncNdConfig(settings map[string]string) {
 	enabled := settings["workflow.fsm"] == "true"
 	if enabled {
-		if custom := settings["workflow.custom_statuses"]; custom != "" {
-			_ = exec.Command("nd", "config", "set", "status.custom", custom).Run()
+		custom := settingOrDefault(settings, "workflow.custom_statuses")
+		sequence := settingOrDefault(settings, "workflow.sequence")
+		rules := settingOrDefault(settings, "workflow.exit_rules")
+
+		if custom != "" {
+			_ = execCommand("nd", "config", "set", "status.custom", custom).Run()
 		}
+		if sequence != "" {
+			_ = execCommand("nd", "config", "set", "status.sequence", sequence).Run()
+		}
+		if rules != "" {
+			_ = execCommand("nd", "config", "set", "status.exit_rules", rules).Run()
+		}
+		_ = execCommand("nd", "config", "set", "status.fsm", "true").Run()
 	} else {
-		_ = exec.Command("nd", "config", "set", "status.fsm", "false").Run()
+		_ = execCommand("nd", "config", "set", "status.fsm", "false").Run()
 	}
+}
+
+func settingOrDefault(settings map[string]string, key string) string {
+	if val := settings[key]; val != "" {
+		return val
+	}
+	return defaults[key]
 }

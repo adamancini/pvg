@@ -137,7 +137,7 @@ func systemBlockMsg(folder string) string {
 }
 
 func checkFilePath(vaultDir, filePath string) Result {
-	if filePath == "" {
+	if filePath == "" || vaultDir == "" {
 		return Result{Allowed: true}
 	}
 
@@ -168,7 +168,7 @@ func checkFilePath(vaultDir, filePath string) Result {
 }
 
 func checkBashCommand(vaultDir, command string) Result {
-	if command == "" {
+	if command == "" || vaultDir == "" {
 		return Result{Allowed: true}
 	}
 
@@ -251,31 +251,28 @@ const projectIssuesBlockMsg = "BLOCKED: Direct modification of issue tracker. " 
 
 // projectVaultPath is the relative path segment that identifies project vault files.
 const projectVaultPath = "/.vault/knowledge/"
+const projectVaultRelPath = ".vault/knowledge/"
 
 // projectIssuesPath is the relative path segment that identifies project issue files.
 const projectIssuesPath = "/.vault/issues/"
+const projectIssuesRelPath = ".vault/issues/"
 
 func checkProjectVault(projectRoot, filePath string) Result {
 	if filePath == "" || projectRoot == "" {
 		return Result{Allowed: true}
 	}
 
-	normRoot := normalizePath(projectRoot)
-
 	// Resolve relative paths against project root before comparison.
 	resolvedFile := filePath
 	if !filepath.IsAbs(filePath) {
-		resolvedFile = filepath.Join(normRoot, filePath)
+		resolvedFile = filepath.Join(filepath.Clean(projectRoot), filePath)
 	}
 	normFile := normalizePath(resolvedFile)
+	cleanFile := filepath.Clean(resolvedFile)
 
-	vaultPrefix := normRoot + projectVaultPath
-	if !strings.HasPrefix(normFile, vaultPrefix) {
-		// Also check cleaned but non-resolved path (file may not exist)
-		cleanFile := filepath.Clean(resolvedFile)
-		if !strings.HasPrefix(cleanFile, vaultPrefix) {
-			return Result{Allowed: true}
-		}
+	if !hasAnyPrefix(normFile, projectPathPrefixes(projectRoot, ".vault", "knowledge")) &&
+		!hasAnyPrefix(cleanFile, projectPathPrefixes(projectRoot, ".vault", "knowledge")) {
+		return Result{Allowed: true}
 	}
 
 	// Allow .settings.yaml -- managed by pvg settings (our own binary)
@@ -296,17 +293,16 @@ func checkBashProjectVault(projectRoot, command string) Result {
 		return Result{Allowed: true}
 	}
 
-	normRoot := normalizePath(projectRoot)
-	vaultSegment := normRoot + projectVaultPath
-
-	if !strings.Contains(command, vaultSegment) {
+	vaultSegments := projectPathPrefixes(projectRoot, ".vault", "knowledge")
+	if !stringsContainAny(command, vaultSegments) && !strings.Contains(command, projectVaultRelPath) {
 		return Result{Allowed: true}
 	}
 
 	// Check redirect operators: protected path must be after the operator.
 	for _, op := range []string{">>", ">"} {
 		if idx := strings.Index(command, op); idx >= 0 {
-			if strings.Contains(command[idx:], vaultSegment) {
+			afterOp := command[idx:]
+			if stringsContainAny(afterOp, vaultSegments) || strings.Contains(afterOp, projectVaultRelPath) {
 				return Result{Allowed: false, Reason: projectVaultBlockMsg}
 			}
 		}
@@ -318,13 +314,19 @@ func checkBashProjectVault(projectRoot, command string) Result {
 		"sed -i", "perl -pi", "install ", "rsync ", "dd ", "patch ",
 	}
 	for _, pattern := range writePatterns {
-		if strings.Contains(command, pattern) {
+		if strings.Contains(command, pattern) &&
+			(stringsContainAny(command, vaultSegments) || strings.Contains(command, projectVaultRelPath)) {
 			return Result{Allowed: false, Reason: projectVaultBlockMsg}
 		}
 	}
 
 	// Detect interpreter-based writes targeting project vault.
-	if containsInterpreterWrite(command, vaultSegment) {
+	for _, segment := range vaultSegments {
+		if containsInterpreterWrite(command, segment) {
+			return Result{Allowed: false, Reason: projectVaultBlockMsg}
+		}
+	}
+	if containsInterpreterWrite(command, projectVaultRelPath) {
 		return Result{Allowed: false, Reason: projectVaultBlockMsg}
 	}
 
@@ -336,22 +338,17 @@ func checkProjectIssues(projectRoot, filePath string) Result {
 		return Result{Allowed: true}
 	}
 
-	normRoot := normalizePath(projectRoot)
-
 	// Resolve relative paths against project root before comparison.
 	resolvedFile := filePath
 	if !filepath.IsAbs(filePath) {
-		resolvedFile = filepath.Join(normRoot, filePath)
+		resolvedFile = filepath.Join(filepath.Clean(projectRoot), filePath)
 	}
 	normFile := normalizePath(resolvedFile)
+	cleanFile := filepath.Clean(resolvedFile)
 
-	issuesPrefix := normRoot + projectIssuesPath
-	if !strings.HasPrefix(normFile, issuesPrefix) {
-		// Also check cleaned but non-resolved path (file may not exist)
-		cleanFile := filepath.Clean(resolvedFile)
-		if !strings.HasPrefix(cleanFile, issuesPrefix) {
-			return Result{Allowed: true}
-		}
+	if !hasAnyPrefix(normFile, projectPathPrefixes(projectRoot, ".vault", "issues")) &&
+		!hasAnyPrefix(cleanFile, projectPathPrefixes(projectRoot, ".vault", "issues")) {
+		return Result{Allowed: true}
 	}
 
 	return Result{Allowed: false, Reason: projectIssuesBlockMsg}
@@ -368,17 +365,16 @@ func checkBashProjectIssues(projectRoot, command string) Result {
 		return Result{Allowed: true}
 	}
 
-	normRoot := normalizePath(projectRoot)
-	issuesSegment := normRoot + projectIssuesPath
-
-	if !strings.Contains(command, issuesSegment) {
+	issueSegments := projectPathPrefixes(projectRoot, ".vault", "issues")
+	if !stringsContainAny(command, issueSegments) && !strings.Contains(command, projectIssuesRelPath) {
 		return Result{Allowed: true}
 	}
 
 	// Check redirect operators: protected path must be after the operator.
 	for _, op := range []string{">>", ">"} {
 		if idx := strings.Index(command, op); idx >= 0 {
-			if strings.Contains(command[idx:], issuesSegment) {
+			afterOp := command[idx:]
+			if stringsContainAny(afterOp, issueSegments) || strings.Contains(afterOp, projectIssuesRelPath) {
 				return Result{Allowed: false, Reason: projectIssuesBlockMsg}
 			}
 		}
@@ -390,15 +386,49 @@ func checkBashProjectIssues(projectRoot, command string) Result {
 		"sed -i", "perl -pi", "install ", "rsync ", "dd ", "patch ",
 	}
 	for _, pattern := range writePatterns {
-		if strings.Contains(command, pattern) {
+		if strings.Contains(command, pattern) &&
+			(stringsContainAny(command, issueSegments) || strings.Contains(command, projectIssuesRelPath)) {
 			return Result{Allowed: false, Reason: projectIssuesBlockMsg}
 		}
 	}
 
 	// Detect interpreter-based writes targeting project issues.
-	if containsInterpreterWrite(command, issuesSegment) {
+	for _, segment := range issueSegments {
+		if containsInterpreterWrite(command, segment) {
+			return Result{Allowed: false, Reason: projectIssuesBlockMsg}
+		}
+	}
+	if containsInterpreterWrite(command, projectIssuesRelPath) {
 		return Result{Allowed: false, Reason: projectIssuesBlockMsg}
 	}
 
 	return Result{Allowed: true}
+}
+
+func projectPathPrefixes(projectRoot string, relParts ...string) []string {
+	rawPrefix := filepath.Join(filepath.Clean(projectRoot), filepath.Join(relParts...)) + string(os.PathSeparator)
+	normPrefix := filepath.Join(normalizePath(projectRoot), filepath.Join(relParts...)) + string(os.PathSeparator)
+
+	if normPrefix == rawPrefix || normPrefix == string(os.PathSeparator) {
+		return []string{rawPrefix}
+	}
+	return []string{rawPrefix, normPrefix}
+}
+
+func hasAnyPrefix(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringsContainAny(s string, needles []string) bool {
+	for _, needle := range needles {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
 }

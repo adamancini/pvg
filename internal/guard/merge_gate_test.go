@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/paivot-ai/pvg/internal/dispatcher"
+	"github.com/paivot-ai/pvg/internal/loop"
 )
 
 func setupMergeGate(t *testing.T, storyID, issueContent string) string {
@@ -35,6 +36,17 @@ func setupMergeGate(t *testing.T, storyID, issueContent string) string {
 	return dir
 }
 
+func writeProjectSettings(t *testing.T, dir string) {
+	t.Helper()
+	path := filepath.Join(dir, ".vault", "knowledge", ".settings.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("stack_detection: false\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCheckMergeGate_BlocksWithoutAcceptedLabel(t *testing.T) {
 	issue := "---\ntitle: Test\nstatus: in_progress\nlabels: [delivered]\n---\nBody"
 	dir := setupMergeGate(t, "PROJ-a1b2", issue)
@@ -58,6 +70,16 @@ func TestCheckMergeGate_AllowsWithAcceptedLabel(t *testing.T) {
 	}
 }
 
+func TestCheckMergeGate_BlocksAcceptedLabelUntilClosed(t *testing.T) {
+	issue := "---\ntitle: Test\nstatus: in_progress\nlabels: [delivered, accepted]\n---\nBody"
+	dir := setupMergeGate(t, "PROJ-a1b2", issue)
+
+	r := CheckMergeGate(dir, "git merge --no-ff origin/story/PROJ-a1b2 -m \"merge\"")
+	if r.Allowed {
+		t.Error("expected blocked when story has accepted label but is not closed")
+	}
+}
+
 func TestCheckMergeGate_AllowsNonStoryMerge(t *testing.T) {
 	issue := "---\ntitle: Test\nstatus: in_progress\nlabels: []\n---\nBody"
 	dir := setupMergeGate(t, "PROJ-a1b2", issue)
@@ -77,8 +99,51 @@ func TestCheckMergeGate_AllowsWhenDispatcherOff(t *testing.T) {
 	}
 }
 
+func TestCheckMergeGate_EnforcedWithProjectSettings(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectSettings(t, dir)
+
+	issuesDir := filepath.Join(dir, ".vault", "issues")
+	if err := os.MkdirAll(issuesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	issue := "---\ntitle: Test\nstatus: in_progress\nlabels: [delivered]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-a1b2.md"), []byte(issue), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(dir, "git merge --no-ff origin/story/PROJ-a1b2 -m \"merge\"")
+	if r.Allowed {
+		t.Error("expected blocked when project is Paivot-managed via settings file")
+	}
+}
+
+func TestCheckMergeGate_EnforcedWithActiveLoop(t *testing.T) {
+	dir := t.TempDir()
+
+	issuesDir := filepath.Join(dir, ".vault", "issues")
+	if err := os.MkdirAll(issuesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	issue := "---\ntitle: Test\nstatus: in_progress\nlabels: [delivered]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-a1b2.md"), []byte(issue), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	state := loop.NewState("all", "", 50)
+	if err := loop.WriteState(dir, state); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(dir, "git merge --no-ff origin/story/PROJ-a1b2 -m \"merge\"")
+	if r.Allowed {
+		t.Error("expected blocked when execution loop is active")
+	}
+}
+
 func TestCheckMergeGate_FailOpenMissingIssue(t *testing.T) {
-	// Dispatcher on but no issue file -- fail-open
+	// Paivot-managed but no issue file -- allow to avoid breaking non-Paivot story/*
+	// branch conventions that happen to share the same naming scheme.
 	dir := setupMergeGate(t, "", "")
 
 	r := CheckMergeGate(dir, "git merge --no-ff origin/story/PROJ-noexist")

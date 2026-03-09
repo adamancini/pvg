@@ -1,8 +1,11 @@
 package settings
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -171,5 +174,139 @@ func TestWorkflowKeyRoundTrip(t *testing.T) {
 		if loaded[k] != v {
 			t.Errorf("key %q: expected %q, got %q", k, v, loaded[k])
 		}
+	}
+}
+
+func TestRunSingleKey_PrintsConfiguredValue(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, ".vault", "knowledge", ".settings.yaml")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, []byte("stack_detection: true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+
+	runErr := Run([]string{"stack_detection"})
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+	if runErr != nil {
+		t.Fatalf("Run: %v", runErr)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := strings.TrimSpace(buf.String()); got != "true" {
+		t.Fatalf("expected single-key output true, got %q", got)
+	}
+}
+
+func TestRunSingleKey_PrintsDefaultValue(t *testing.T) {
+	dir := t.TempDir()
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+
+	runErr := Run([]string{"loop.persist_across_sessions"})
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+	if runErr != nil {
+		t.Fatalf("Run: %v", runErr)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := strings.TrimSpace(buf.String()); got != "false" {
+		t.Fatalf("expected default single-key output false, got %q", got)
+	}
+}
+
+func TestSyncNdConfig_UsesNdConfigSetArgsInOrder(t *testing.T) {
+	var calls [][]string
+	oldExec := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		call := append([]string{name}, args...)
+		calls = append(calls, call)
+		return exec.Command("true")
+	}
+	defer func() { execCommand = oldExec }()
+
+	syncNdConfig(map[string]string{
+		"workflow.fsm":             "true",
+		"workflow.sequence":        "open,in_progress,delivered,review,closed",
+		"workflow.exit_rules":      "blocked:open,in_progress;rejected:in_progress",
+		"workflow.custom_statuses": "delivered,review,rejected",
+	})
+
+	want := [][]string{
+		{"nd", "config", "set", "status.custom", "delivered,review,rejected"},
+		{"nd", "config", "set", "status.sequence", "open,in_progress,delivered,review,closed"},
+		{"nd", "config", "set", "status.exit_rules", "blocked:open,in_progress;rejected:in_progress"},
+		{"nd", "config", "set", "status.fsm", "true"},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("unexpected nd config calls:\n got: %#v\nwant: %#v", calls, want)
+	}
+}
+
+func TestSyncNdConfig_FallsBackToDefaults(t *testing.T) {
+	var calls [][]string
+	oldExec := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		call := append([]string{name}, args...)
+		calls = append(calls, call)
+		return exec.Command("true")
+	}
+	defer func() { execCommand = oldExec }()
+
+	syncNdConfig(map[string]string{
+		"workflow.fsm": "true",
+	})
+
+	want := [][]string{
+		{"nd", "config", "set", "status.custom", defaults["workflow.custom_statuses"]},
+		{"nd", "config", "set", "status.sequence", defaults["workflow.sequence"]},
+		{"nd", "config", "set", "status.exit_rules", defaults["workflow.exit_rules"]},
+		{"nd", "config", "set", "status.fsm", "true"},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("unexpected nd config calls:\n got: %#v\nwant: %#v", calls, want)
 	}
 }

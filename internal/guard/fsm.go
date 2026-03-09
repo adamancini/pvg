@@ -25,7 +25,11 @@ func ParseWorkflowConfig(s map[string]string) WorkflowConfig {
 
 	wc.Enabled = s["workflow.fsm"] == "true"
 
-	if seq := s["workflow.sequence"]; seq != "" {
+	seq := s["workflow.sequence"]
+	if seq == "" {
+		seq = settings.Default("workflow.sequence")
+	}
+	if seq != "" {
 		for _, status := range strings.Split(seq, ",") {
 			if t := strings.TrimSpace(status); t != "" {
 				wc.Sequence = append(wc.Sequence, t)
@@ -33,7 +37,11 @@ func ParseWorkflowConfig(s map[string]string) WorkflowConfig {
 		}
 	}
 
-	if rules := s["workflow.exit_rules"]; rules != "" {
+	rules := s["workflow.exit_rules"]
+	if rules == "" {
+		rules = settings.Default("workflow.exit_rules")
+	}
+	if rules != "" {
 		// Format: "blocked:open,in_progress;rejected:in_progress"
 		for _, rule := range strings.Split(rules, ";") {
 			parts := strings.SplitN(rule, ":", 2)
@@ -125,6 +133,12 @@ var ndUpdateRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\
 // ndCloseRe matches: nd [global-flags] close <id> [<id>...]
 var ndCloseRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*close\s+(.+?)(?:\s*[;&|]|$)`)
 
+// ndLabelsAddRe matches: nd [global-flags] labels add <id> <label> [label...]
+var ndLabelsAddRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*labels\s+add\s+(\S+)\s+(.+?)(?:\s*[;&|]|$)`)
+
+// ndUpdateAddLabelRe matches: nd [global-flags] update <id> ... --add-label=<label> or --add-label <label>
+var ndUpdateAddLabelRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*update\s+(\S+)\s+.*?--add-label(?:=| )(\S+)`)
+
 // parseNdStatusChange extracts issue IDs and new status from an nd command.
 // Returns multiple IDs for "nd close id1 id2 ...".
 func parseNdStatusChange(command string) (ids []string, newStatus string, found bool) {
@@ -155,6 +169,34 @@ func parseNdStatusChange(command string) (ids []string, newStatus string, found 
 	}
 
 	return nil, "", false
+}
+
+func parseNdContractLabelAdd(command string) (issueID string, labels []string, found bool) {
+	if matches := ndUpdateAddLabelRe.FindStringSubmatch(command); len(matches) == 3 {
+		id := strings.Trim(matches[1], `"'`)
+		label := strings.Trim(matches[2], `"'`)
+		if id != "" && label != "" {
+			return id, strings.Split(label, ","), true
+		}
+	}
+
+	if matches := ndLabelsAddRe.FindStringSubmatch(command); len(matches) == 3 {
+		id := strings.Trim(matches[1], `"'`)
+		if id == "" {
+			return "", nil, false
+		}
+		for _, part := range strings.Fields(matches[2]) {
+			label := strings.Trim(part, `"'`)
+			if label != "" && !strings.HasPrefix(label, "-") {
+				labels = append(labels, label)
+			}
+		}
+		if len(labels) > 0 {
+			return id, labels, true
+		}
+	}
+
+	return "", nil, false
 }
 
 // ReadIssueStatus reads the status from an nd issue's frontmatter.
@@ -203,21 +245,64 @@ func CheckFSM(projectRoot, command string) Result {
 	}
 
 	ids, newStatus, found := parseNdStatusChange(command)
-	if !found {
-		return Result{Allowed: true}
+	if found {
+		for _, id := range ids {
+			currentStatus := ReadIssueStatus(projectRoot, id)
+			if currentStatus == "" {
+				// Fail-open: can't read current status
+				continue
+			}
+			if r := ValidateTransition(wc, id, currentStatus, newStatus); !r.Allowed {
+				return r
+			}
+		}
 	}
 
-	for _, id := range ids {
-		currentStatus := ReadIssueStatus(projectRoot, id)
+	if issueID, labels, found := parseNdContractLabelAdd(command); found {
+		currentStatus := ReadIssueStatus(projectRoot, issueID)
 		if currentStatus == "" {
-			// Fail-open: can't read current status
-			continue
+			return Result{Allowed: true}
 		}
-		if r := ValidateTransition(wc, id, currentStatus, newStatus); !r.Allowed {
-			return r
+		for _, label := range labels {
+			if r := validateContractLabel(issueID, currentStatus, label); !r.Allowed {
+				return r
+			}
 		}
 	}
 
+	return Result{Allowed: true}
+}
+
+func validateContractLabel(issueID, currentStatus, label string) Result {
+	switch label {
+	case "delivered":
+		if currentStatus != "in_progress" {
+			return Result{
+				Allowed: false,
+				Reason: fmt.Sprintf(
+					"Contract: cannot mark %s as delivered while nd status is '%s'.\nRequired nd status: 'in_progress'.",
+					issueID, currentStatus),
+			}
+		}
+	case "accepted":
+		if currentStatus != "closed" {
+			return Result{
+				Allowed: false,
+				Reason: fmt.Sprintf(
+					"Contract: cannot mark %s as accepted while nd status is '%s'.\nRequired nd status: 'closed'.",
+					issueID, currentStatus),
+			}
+		}
+	case "rejected":
+		if currentStatus != "open" {
+			return Result{
+				Allowed: false,
+				Reason: fmt.Sprintf(
+					"Contract: cannot mark %s as rejected while nd status is '%s'.\nRequired nd status: 'open'.",
+					issueID, currentStatus),
+			}
+		}
+	}
 	return Result{Allowed: true}
 }
 

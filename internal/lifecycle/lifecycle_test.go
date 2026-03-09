@@ -1,11 +1,14 @@
 package lifecycle
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/RamXX/vlt"
 )
 
 func TestDetectProject_FallsBackToBasename(t *testing.T) {
@@ -109,6 +112,58 @@ func TestStaticOperatingMode_ContainsKeyContent(t *testing.T) {
 		if !strings.Contains(mode, check) {
 			t.Errorf("static operating mode missing %q", check)
 		}
+	}
+}
+
+func TestFormatVaultSearchOutput_NoResults(t *testing.T) {
+	got := formatVaultSearchOutput(nil, nil)
+	want := "(none found -- this is a new project to the vault)"
+	if got != want {
+		t.Errorf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFormatVaultSearchOutput_DegradedError(t *testing.T) {
+	got := formatVaultSearchOutput(nil, errors.New("vault lock denied"))
+	if !strings.Contains(got, "vault search unavailable -- degraded mode") {
+		t.Errorf("expected degraded mode message, got %q", got)
+	}
+	if !strings.Contains(got, "vault lock denied") {
+		t.Errorf("expected original error in message, got %q", got)
+	}
+}
+
+func TestFormatVaultSearchOutput_WithResults(t *testing.T) {
+	results := []vlt.SearchResult{
+		{Title: "paivot-graph", RelPath: "projects/paivot-graph.md"},
+		{Title: "Testing Philosophy", RelPath: "patterns/testing-philosophy.md"},
+	}
+	got := formatVaultSearchOutput(results, nil)
+	if !strings.Contains(got, "paivot-graph (projects/paivot-graph.md)") {
+		t.Errorf("expected first result in output, got %q", got)
+	}
+	if !strings.Contains(got, "Testing Philosophy (patterns/testing-philosophy.md)") {
+		t.Errorf("expected second result in output, got %q", got)
+	}
+}
+
+func TestFormatOperatingModeOutput_DegradedError(t *testing.T) {
+	got := formatOperatingModeOutput("", errors.New("permission denied"))
+	if !strings.Contains(got, "Operating mode unavailable from vault -- using built-in fallback") {
+		t.Errorf("expected fallback message, got %q", got)
+	}
+	if !strings.Contains(got, "permission denied") {
+		t.Errorf("expected original error in output, got %q", got)
+	}
+	if !strings.Contains(got, "CONCURRENCY LIMITS") {
+		t.Errorf("expected built-in operating mode content, got %q", got)
+	}
+}
+
+func TestFormatOperatingModeOutput_WithContent(t *testing.T) {
+	got := formatOperatingModeOutput("Use dispatcher mode.", nil)
+	if got != "[VAULT] Operating mode for this session (from vault):\n\nUse dispatcher mode.\n" {
+		t.Errorf("unexpected output: %q", got)
 	}
 }
 
@@ -420,7 +475,7 @@ We chose Go for the pvg CLI because it compiles to a single binary.
 	outputProjectKnowledge(knowledgeDir, dir)
 }
 
-func TestCleanupStaleLoop_PreservesByDefault(t *testing.T) {
+func TestCleanupStaleLoop_RemovesByDefault(t *testing.T) {
 	dir := t.TempDir()
 	vaultDir := filepath.Join(dir, ".vault")
 	if err := os.MkdirAll(vaultDir, 0755); err != nil {
@@ -434,16 +489,16 @@ func TestCleanupStaleLoop_PreservesByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No settings file = persist enabled (default); state should survive
+	// No settings file = persist disabled (default); state should be removed
 	cleanupStaleLoop(dir)
 
-	// State file should still exist
-	if _, err := os.Stat(statePath); os.IsNotExist(err) {
-		t.Error("expected loop state file to be preserved (default is persist=true)")
+	// State file should be gone
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Error("expected loop state file to be removed by default (persist=false)")
 	}
 }
 
-func TestCleanupStaleLoop_RemovesWhenPersistExplicitlyDisabled(t *testing.T) {
+func TestCleanupStaleLoop_PreservesWhenPersistExplicitlyEnabled(t *testing.T) {
 	dir := t.TempDir()
 	vaultDir := filepath.Join(dir, ".vault")
 	knowledgeDir := filepath.Join(vaultDir, "knowledge")
@@ -458,17 +513,17 @@ func TestCleanupStaleLoop_RemovesWhenPersistExplicitlyDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Explicitly disable persist
-	settingsContent := "loop.persist_across_sessions: false\n"
+	// Explicitly enable persist
+	settingsContent := "loop.persist_across_sessions: true\n"
 	if err := os.WriteFile(filepath.Join(knowledgeDir, ".settings.yaml"), []byte(settingsContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	cleanupStaleLoop(dir)
 
-	// State file should be gone
-	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
-		t.Error("expected loop state file to be removed when persist=false")
+	// State file should still exist
+	if _, err := os.Stat(statePath); os.IsNotExist(err) {
+		t.Error("expected loop state file to be preserved when persist=true")
 	}
 }
 

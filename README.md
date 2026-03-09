@@ -27,7 +27,7 @@ pvg consolidates all of this into a single Go binary:
 - **Dispatcher mode** -- Tracks BLT agent (BA, Designer, Architect) lifecycle so the guard can distinguish agent writes from orchestrator writes.
 - **Execution loop** -- Manages unattended story execution with configurable iteration limits and automatic blocking detection.
 - **Vault seeding** -- Writes agent prompts and behavioral notes to the Obsidian vault under an exclusive `vlt` lock to prevent concurrent write corruption.
-- **FSM governance** -- Enforces `nd` state machine transitions (stories must follow ready -> in_progress -> delivered -> accepted).
+- **FSM governance** -- Enforces the configured `nd` status pipeline from project settings when enabled.
 
 ## Installation
 
@@ -102,6 +102,9 @@ Two protection layers:
 
 All `vlt` commands are always allowed (they use advisory locking for concurrent safety).
 
+Additional execution safeguard:
+- **Story merge gate** -- In Paivot-managed repos, `git merge story/<STORY_ID>` is blocked until the matching nd issue is both labeled `accepted` and `closed`. This applies during active loops and other Paivot execution flows, even if dispatcher mode is currently off.
+
 ### Execution loop
 
 ```bash
@@ -136,6 +139,7 @@ Seeds agent prompts (8 agents), skill content, and behavioral notes (Session Ope
 
 ```bash
 pvg settings                         # Show all settings
+pvg settings stack_detection         # Read one setting
 pvg settings stack_detection=true    # Set a value
 ```
 

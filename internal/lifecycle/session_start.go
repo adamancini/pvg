@@ -61,16 +61,7 @@ func SessionStart() error {
 		searchQuery = `"` + strings.ReplaceAll(project, `"`, `\"`) + `"`
 	}
 	results, err := v.Search(vlt.SearchOptions{Query: searchQuery})
-	searchOutput := ""
-	if err != nil || len(results) == 0 {
-		searchOutput = "(none found -- this is a new project to the vault)"
-	} else {
-		var lines []string
-		for _, r := range results {
-			lines = append(lines, fmt.Sprintf("%s (%s)", r.Title, r.RelPath))
-		}
-		searchOutput = strings.Join(lines, "\n")
-	}
+	searchOutput := formatVaultSearchOutput(results, err)
 
 	fmt.Printf("[VAULT] Project: %s\nRelevant vault notes:\n\n%s\n\n", project, searchOutput)
 
@@ -82,14 +73,34 @@ func SessionStart() error {
 
 	// 5. Read operating mode
 	result, err := v.Read("Session Operating Mode", "")
-	if err != nil || result.Content == "" {
-		// Static fallback
-		fmt.Print(staticOperatingMode())
-	} else {
-		fmt.Printf("[VAULT] Operating mode for this session (from vault):\n\n%s\n", result.Content)
-	}
+	fmt.Print(formatOperatingModeOutput(result.Content, err))
 
 	return nil
+}
+
+func formatVaultSearchOutput(results []vlt.SearchResult, err error) string {
+	if err != nil {
+		return fmt.Sprintf("(vault search unavailable -- degraded mode: %v)", err)
+	}
+	if len(results) == 0 {
+		return "(none found -- this is a new project to the vault)"
+	}
+
+	var lines []string
+	for _, r := range results {
+		lines = append(lines, fmt.Sprintf("%s (%s)", r.Title, r.RelPath))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatOperatingModeOutput(content string, err error) string {
+	if err != nil {
+		return fmt.Sprintf("[VAULT] Operating mode unavailable from vault -- using built-in fallback. (%v)\n\n%s", err, staticOperatingMode())
+	}
+	if strings.TrimSpace(content) == "" {
+		return staticOperatingMode()
+	}
+	return fmt.Sprintf("[VAULT] Operating mode for this session (from vault):\n\n%s\n", content)
 }
 
 func detectProject(cwd string) string {
