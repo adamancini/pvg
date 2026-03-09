@@ -73,37 +73,35 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 		}
 	}
 
-	// Wait-like: nothing actionable but work is in progress (agents running)
-	if actionable == 0 && cfg.InProgress > 0 {
-		newConsec := cfg.ConsecWaits + 1
-		newWaitIters := cfg.WaitIterations + 1
+	// Work exists but the dispatcher may be at capacity (agents running,
+	// concurrency limits reached). Track consecutive waits uniformly --
+	// after MaxConsecWaits iterations of no progress, allow exit.
+	// Background agent notifications will resume the loop.
+	newConsec := cfg.ConsecWaits + 1
+	newWaitIters := cfg.WaitIterations + 1
 
-		if newConsec >= cfg.MaxConsecWaits {
-			return StopDecision{
-				Allow:          true,
-				Reason:         "Too many consecutive wait iterations",
-				RemoveState:    true,
-				NewIteration:   nextIter,
-				NewConsecWaits: newConsec,
-				NewWaitIters:   newWaitIters,
-			}
-		}
-
+	if newConsec >= cfg.MaxConsecWaits {
 		return StopDecision{
-			Allow:          false,
-			Reason:         "Waiting for in-progress work to complete",
+			Allow:          true,
+			Reason:         "No progress after consecutive wait iterations",
+			RemoveState:    true,
 			NewIteration:   nextIter,
 			NewConsecWaits: newConsec,
 			NewWaitIters:   newWaitIters,
 		}
 	}
 
-	// Actionable work exists -- block exit, reset consecutive waits
+	// Determine reason based on what's pending
+	reason := "Actionable work remains"
+	if actionable == 0 && cfg.InProgress > 0 {
+		reason = "Waiting for in-progress work to complete"
+	}
+
 	return StopDecision{
 		Allow:          false,
-		Reason:         "Actionable work remains",
+		Reason:         reason,
 		NewIteration:   nextIter,
-		NewConsecWaits: 0,
-		NewWaitIters:   cfg.WaitIterations,
+		NewConsecWaits: newConsec,
+		NewWaitIters:   newWaitIters,
 	}
 }
