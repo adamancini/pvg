@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -230,6 +231,117 @@ func TestOn_DoesNotOverwriteExistingSettings(t *testing.T) {
 	}
 	if string(data) != custom {
 		t.Errorf("settings were overwritten: got %q, want %q", string(data), custom)
+	}
+}
+
+func TestEnsureGitignore_CreatesNewFile(t *testing.T) {
+	dir := t.TempDir()
+	ensureGitignore(dir)
+
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("expected .gitignore to be created: %v", err)
+	}
+
+	content := string(data)
+	for _, entry := range gitignoreEntries {
+		if !containsLine(content, entry) {
+			t.Errorf("expected .gitignore to contain %q", entry)
+		}
+	}
+}
+
+func TestEnsureGitignore_AppendsToExisting(t *testing.T) {
+	dir := t.TempDir()
+	existing := "*.pyc\n__pycache__/\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ensureGitignore(dir)
+
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(data)
+	// Existing entries preserved
+	if !containsLine(content, "*.pyc") {
+		t.Error("lost existing .gitignore entry")
+	}
+	// New entries added
+	for _, entry := range gitignoreEntries {
+		if !containsLine(content, entry) {
+			t.Errorf("expected .gitignore to contain %q", entry)
+		}
+	}
+}
+
+func TestEnsureGitignore_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	ensureGitignore(dir)
+	data1, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+
+	ensureGitignore(dir)
+	data2, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+
+	if string(data1) != string(data2) {
+		t.Error("ensureGitignore is not idempotent -- content changed on second call")
+	}
+}
+
+func TestEnsureGitignore_SkipsExistingEntries(t *testing.T) {
+	dir := t.TempDir()
+	existing := ".vault/issues/\n.vault/.nd.yaml\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ensureGitignore(dir)
+
+	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	content := string(data)
+
+	// Count occurrences of ".vault/issues/"
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == ".vault/issues/" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 occurrence of .vault/issues/, got %d", count)
+	}
+}
+
+func TestContainsLine(t *testing.T) {
+	content := "foo\nbar\n  baz  \n"
+	if !containsLine(content, "foo") {
+		t.Error("should find 'foo'")
+	}
+	if !containsLine(content, "baz") {
+		t.Error("should find 'baz' (trimmed)")
+	}
+	if containsLine(content, "qux") {
+		t.Error("should not find 'qux'")
+	}
+}
+
+func TestOn_CreatesGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if err := On(dir); err != nil {
+		t.Fatalf("On() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("expected .gitignore after On(): %v", err)
+	}
+
+	content := string(data)
+	if !containsLine(content, ".vault/issues/") {
+		t.Error("On() should gitignore .vault/issues/")
 	}
 }
 

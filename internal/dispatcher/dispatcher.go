@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -77,6 +78,60 @@ func initProjectVault(projectRoot string) {
 	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
 		defaultSettings := "# paivot-graph project vault settings\n# Managed by: pvg settings key=value\n\nstack_detection: false\n"
 		_ = os.WriteFile(settingsPath, []byte(defaultSettings), 0644)
+	}
+
+	// Ensure runtime state files are gitignored.
+	// nd issues and loop/dispatcher state are filesystem-based and must not
+	// be committed -- git checkout/merge would overwrite nd state changes
+	// made by PM-Acceptor or other agents between branch switches.
+	ensureGitignore(projectRoot)
+}
+
+// gitignoreEntries are paths that must be excluded from git tracking.
+// These are runtime state files that change independently of code branches.
+var gitignoreEntries = []string{
+	".vault/issues/",
+	".vault/.nd.yaml",
+	".vault/.piv-loop-state.json",
+	".vault/.piv-loop-snapshot.json",
+	".vault/.dispatcher-state.json",
+	".vault/.vlt.lock",
+	".vault/.guard/",
+}
+
+// ensureGitignore appends missing entries to the project's .gitignore.
+// Idempotent: skips entries that already exist.
+func ensureGitignore(projectRoot string) {
+	gitignorePath := filepath.Join(projectRoot, ".gitignore")
+
+	existing, _ := os.ReadFile(gitignorePath)
+	content := string(existing)
+
+	var toAdd []string
+	for _, entry := range gitignoreEntries {
+		if !containsLine(content, entry) {
+			toAdd = append(toAdd, entry)
+		}
+	}
+
+	if len(toAdd) == 0 {
+		return
+	}
+
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	// Add a blank line separator if the file doesn't end with one
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		_, _ = f.WriteString("\n")
+	}
+
+	_, _ = f.WriteString("\n# Paivot runtime state (managed by pvg)\n")
+	for _, entry := range toAdd {
+		_, _ = f.WriteString(entry + "\n")
 	}
 }
 
@@ -185,4 +240,14 @@ func writeState(projectRoot string, state State) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
+}
+
+// containsLine checks if content has a line matching entry (trimmed).
+func containsLine(content, entry string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == entry {
+			return true
+		}
+	}
+	return false
 }
