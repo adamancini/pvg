@@ -143,7 +143,7 @@ func checkLoop(cwd string) error {
 	if state.MaxIterations > 0 {
 		maxIterStr = strconv.Itoa(state.MaxIterations)
 	}
-	prompt := buildContinuationPrompt(state, &decision, maxIterStr, &wc)
+	prompt := BuildContinuationPrompt(state, &decision, maxIterStr, &wc)
 
 	continuation := map[string]any{
 		"decision": "block",
@@ -170,21 +170,38 @@ func isLoopPersistEnabled(cwd string) bool {
 	return s["loop.persist_across_sessions"] == "true"
 }
 
-// buildContinuationPrompt creates the prompt for the next loop iteration.
-func buildContinuationPrompt(state *loop.State, decision *loop.StopDecision, maxIterStr string, wc *loop.WorkCounts) string {
-	prompt := fmt.Sprintf(
-		"[LOOP] Iteration %d/%s | Ready: %d, Delivered: %d, In-progress: %d, Blocked: %d | %s\n\n",
+// BuildContinuationPrompt creates the prompt for the next loop iteration.
+// Context-aware: minimal prompt when waiting for agents, fuller prompt when
+// there is actionable work the dispatcher can act on.
+func BuildContinuationPrompt(state *loop.State, decision *loop.StopDecision, maxIterStr string, wc *loop.WorkCounts) string {
+	header := fmt.Sprintf(
+		"[LOOP] Iteration %d/%s | Ready: %d, Delivered: %d, In-progress: %d, Blocked: %d | %s\n",
 		decision.NewIteration, maxIterStr,
 		wc.Ready, wc.Delivered, wc.InProgress, wc.Blocked,
 		decision.Reason,
 	)
 
-	prompt += "Continue the execution loop. Priority order:\n"
-	prompt += "1. PM-Acceptor for delivered stories (nd list --status in_progress --label delivered --json)\n"
-	prompt += "2. Developer for rejected stories (nd list --status in_progress --label rejected --json)\n"
-	prompt += "3. Developer for ready stories (nd ready --json)\n\n"
-	prompt += "Concurrency: max 2 developer agents, max 1 PM agent, max 3 total.\n"
-	prompt += "You are dispatcher-only: spawn agents, do not write code or fix errors yourself.\n"
+	// Wait-like: nothing ready to spawn, agents are running
+	if wc.Ready == 0 && wc.InProgress > 0 {
+		prompt := header
+		if wc.Delivered > 0 {
+			prompt += fmt.Sprintf("\n%d delivered stories await PM review -- spawn PM-Acceptor.\n", wc.Delivered)
+		} else {
+			prompt += "\nBackground agents are working. Wait for completions.\nDo NOT produce explanatory output or spawn new agents.\n"
+		}
+		return prompt
+	}
+
+	// Actionable ready work exists
+	prompt := header + "\nContinue:\n"
+	if wc.Delivered > 0 {
+		prompt += fmt.Sprintf("- PM-Acceptor: %d delivered\n", wc.Delivered)
+	}
+	if wc.Ready > 0 {
+		prompt += fmt.Sprintf("- Developer: %d ready\n", wc.Ready)
+	}
+	prompt += "\nIf agents already cover all ready stories, wait silently.\n"
+	prompt += "Concurrency: max 2 dev, max 1 PM, max 3 total. Dispatcher-only.\n"
 
 	if state.Mode == "epic" && state.TargetEpic != "" {
 		prompt += fmt.Sprintf("Scope: epic %s only.\n", state.TargetEpic)
