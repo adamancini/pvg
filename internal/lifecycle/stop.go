@@ -122,9 +122,15 @@ func checkLoop(cwd string) error {
 
 	if decision.Allow {
 		fmt.Fprintf(os.Stderr, "[LOOP] %s\n", decision.Reason)
-		persist := isLoopPersistEnabled(cwd)
-		if decision.RemoveState || !persist {
+		if decision.RemoveState {
 			_ = loop.RemoveState(cwd)
+		} else {
+			// Escape valve: keep state active but update counters (reset ConsecWaits).
+			// Background agent completions will resume the loop in a new session.
+			state.Iteration = decision.NewIteration
+			state.ConsecutiveWaits = decision.NewConsecWaits
+			state.WaitIterations = decision.NewWaitIters
+			_ = loop.WriteState(cwd, state)
 		}
 		return nil
 	}
@@ -164,10 +170,15 @@ func checkLoop(cwd string) error {
 }
 
 // isLoopPersistEnabled checks if loop state should persist across sessions.
+// Default is true (loop survives session boundaries for background agent flow).
 func isLoopPersistEnabled(cwd string) bool {
 	path := filepath.Join(cwd, ".vault", "knowledge", ".settings.yaml")
 	s := settings.LoadFile(path)
-	return s["loop.persist_across_sessions"] == "true"
+	v, ok := s["loop.persist_across_sessions"]
+	if !ok {
+		return true // default
+	}
+	return v != "false"
 }
 
 // BuildContinuationPrompt creates the prompt for the next loop iteration.

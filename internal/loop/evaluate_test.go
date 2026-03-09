@@ -207,11 +207,11 @@ func TestEvaluateStop_WaitLike_ThresholdReached(t *testing.T) {
 	if !d.Allow {
 		t.Error("expected allow at wait threshold")
 	}
-	if !d.RemoveState {
-		t.Error("expected remove state at wait threshold")
+	if d.RemoveState {
+		t.Error("expected state preserved at wait threshold (background agents resume)")
 	}
-	if d.NewConsecWaits != 3 {
-		t.Errorf("expected consec waits=3, got %d", d.NewConsecWaits)
+	if d.NewConsecWaits != 0 {
+		t.Errorf("expected consec waits reset to 0, got %d", d.NewConsecWaits)
 	}
 	if d.Reason != "No progress after consecutive wait iterations" {
 		t.Errorf("unexpected reason: %s", d.Reason)
@@ -261,8 +261,8 @@ func TestEvaluateStop_ConsecWaitsAccumulate_AcrossStates(t *testing.T) {
 	if !d3.Allow {
 		t.Error("expected allow after reaching threshold")
 	}
-	if d3.NewConsecWaits != 3 {
-		t.Errorf("expected consec waits=3, got %d", d3.NewConsecWaits)
+	if d3.NewConsecWaits != 0 {
+		t.Errorf("expected consec waits reset to 0, got %d", d3.NewConsecWaits)
 	}
 }
 
@@ -280,6 +280,12 @@ func TestEvaluateStop_ActionableThreshold_AllowsExit(t *testing.T) {
 	})
 	if !d.Allow {
 		t.Error("expected allow when actionable threshold reached")
+	}
+	if d.RemoveState {
+		t.Error("expected state preserved (background agents resume)")
+	}
+	if d.NewConsecWaits != 0 {
+		t.Errorf("expected consec waits reset to 0, got %d", d.NewConsecWaits)
 	}
 	if d.Reason != "No progress after consecutive wait iterations" {
 		t.Errorf("unexpected reason: %s", d.Reason)

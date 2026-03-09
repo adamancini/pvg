@@ -420,7 +420,7 @@ We chose Go for the pvg CLI because it compiles to a single binary.
 	outputProjectKnowledge(knowledgeDir, dir)
 }
 
-func TestCleanupStaleLoop_RemovesWhenPersistDisabled(t *testing.T) {
+func TestCleanupStaleLoop_PreservesByDefault(t *testing.T) {
 	dir := t.TempDir()
 	vaultDir := filepath.Join(dir, ".vault")
 	if err := os.MkdirAll(vaultDir, 0755); err != nil {
@@ -434,16 +434,16 @@ func TestCleanupStaleLoop_RemovesWhenPersistDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No settings file = persist disabled (default); cleanup is silent
+	// No settings file = persist enabled (default); state should survive
 	cleanupStaleLoop(dir)
 
-	// State file should be gone
-	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
-		t.Error("expected loop state file to be removed, but it still exists")
+	// State file should still exist
+	if _, err := os.Stat(statePath); os.IsNotExist(err) {
+		t.Error("expected loop state file to be preserved (default is persist=true)")
 	}
 }
 
-func TestCleanupStaleLoop_PreservesWhenPersistEnabled(t *testing.T) {
+func TestCleanupStaleLoop_RemovesWhenPersistExplicitlyDisabled(t *testing.T) {
 	dir := t.TempDir()
 	vaultDir := filepath.Join(dir, ".vault")
 	knowledgeDir := filepath.Join(vaultDir, "knowledge")
@@ -458,17 +458,17 @@ func TestCleanupStaleLoop_PreservesWhenPersistEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Enable persist
-	settingsContent := "loop.persist_across_sessions: true\n"
+	// Explicitly disable persist
+	settingsContent := "loop.persist_across_sessions: false\n"
 	if err := os.WriteFile(filepath.Join(knowledgeDir, ".settings.yaml"), []byte(settingsContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	cleanupStaleLoop(dir)
 
-	// State file should still exist
-	if _, err := os.Stat(statePath); os.IsNotExist(err) {
-		t.Error("expected loop state file to be preserved, but it was removed")
+	// State file should be gone
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Error("expected loop state file to be removed when persist=false")
 	}
 }
 

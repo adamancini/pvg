@@ -84,9 +84,9 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 		return StopDecision{
 			Allow:          true,
 			Reason:         "No progress after consecutive wait iterations",
-			RemoveState:    true,
+			RemoveState:    false, // keep state -- background agents will resume
 			NewIteration:   nextIter,
-			NewConsecWaits: newConsec,
+			NewConsecWaits: 0, // reset budget for next session
 			NewWaitIters:   newWaitIters,
 		}
 	}
