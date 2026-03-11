@@ -571,6 +571,7 @@ func loopRecover(cwd string, args []string) error {
 		fmt.Println("[RECOVER] Recovery complete.")
 		fmt.Printf("  Worktrees removed: %d\n", plan.Summary.WorktreesRemoved)
 		fmt.Printf("  Branches deleted:  %d\n", plan.Summary.BranchesDeleted)
+		fmt.Printf("  Stale branches:    %d\n", plan.Summary.StaleBranchesDeleted)
 		fmt.Printf("  Stories reset:     %d\n", plan.Summary.StoriesReset)
 		fmt.Printf("  Stories delivered:  %d (needs PM review)\n", plan.Summary.StoriesDelivered)
 		fmt.Printf("  Orphan worktrees:  %d\n", plan.Summary.OrphanWorktrees)

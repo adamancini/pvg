@@ -159,6 +159,31 @@ func parseOneWorktreeBlock(lines []string) Worktree {
 	return wt
 }
 
+// ListMergedBranches returns local branches matching epic/*, story/*, or
+// worktree-* that are fully merged into main. These are stale leftovers
+// from completed work that should be cleaned up.
+func ListMergedBranches(projectRoot string) ([]string, error) {
+	cmd := exec.Command("git", "branch", "--merged", "main")
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git branch --merged: %w", err)
+	}
+	var branches []string
+	for _, line := range strings.Split(string(out), "\n") {
+		branch := strings.TrimSpace(line)
+		if branch == "" || branch == "main" || strings.HasPrefix(branch, "* ") {
+			continue
+		}
+		if strings.HasPrefix(branch, "epic/") ||
+			strings.HasPrefix(branch, "story/") ||
+			strings.HasPrefix(branch, "worktree-") {
+			branches = append(branches, branch)
+		}
+	}
+	return branches, nil
+}
+
 // BuildSnapshot queries nd for in-progress issues, lists worktrees, and
 // assembles a snapshot. agentAssignments maps story IDs to agent types
 // (e.g. "PROJ-a1b" -> "developer"). It is optional.

@@ -257,6 +257,61 @@ func TestIsInProgressInND_CaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestEvaluateRecover_StaleMergedBranches(t *testing.T) {
+	cfg := RecoverConfig{
+		StaleBranches: []string{
+			"epic/PROJ-abc",
+			"epic/PROJ-def",
+			"story/PROJ-g1h",
+			"worktree-agent-xyz",
+		},
+	}
+
+	plan := EvaluateRecover(cfg)
+
+	// All 4 stale branches should be scheduled for deletion
+	deleteCount := 0
+	for _, a := range plan.Actions {
+		if a.Kind == ActionDeleteBranch {
+			deleteCount++
+		}
+	}
+	if deleteCount != 4 {
+		t.Errorf("expected 4 branch deletions, got %d", deleteCount)
+	}
+	if plan.Summary.StaleBranchesDeleted != 4 {
+		t.Errorf("expected 4 stale branches deleted, got %d", plan.Summary.StaleBranchesDeleted)
+	}
+	if plan.Summary.BranchesDeleted != 4 {
+		t.Errorf("expected 4 total branches deleted, got %d", plan.Summary.BranchesDeleted)
+	}
+}
+
+func TestEvaluateRecover_StaleBranchDeduplication(t *testing.T) {
+	// Stale branch that is also an orphan worktree branch should not be deleted twice
+	cfg := RecoverConfig{
+		CurrentWorktrees: []Worktree{
+			{Path: "/wt/agent-abc", Branch: "worktree-agent-abc"},
+		},
+		StaleBranches: []string{
+			"worktree-agent-abc", // same as orphan worktree branch
+			"epic/PROJ-old",     // genuinely stale
+		},
+	}
+
+	plan := EvaluateRecover(cfg)
+
+	// worktree-agent-abc: 1 from orphan cleanup
+	// epic/PROJ-old: 1 from stale branch cleanup
+	// worktree-agent-abc should NOT be duplicated
+	if plan.Summary.BranchesDeleted != 2 {
+		t.Errorf("expected 2 total branches deleted (no duplicates), got %d", plan.Summary.BranchesDeleted)
+	}
+	if plan.Summary.StaleBranchesDeleted != 1 {
+		t.Errorf("expected 1 stale branch (epic/PROJ-old only), got %d", plan.Summary.StaleBranchesDeleted)
+	}
+}
+
 // --- helpers ---
 
 func actionKinds(actions []RecoverAction) []ActionKind {

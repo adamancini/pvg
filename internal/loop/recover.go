@@ -31,16 +31,18 @@ type RecoverConfig struct {
 	SnapshotStories  []SnapshotEntry
 	CurrentWorktrees []Worktree
 	InProgressIssues []ndIssue
+	StaleBranches    []string // local branches merged into main matching epic/*, story/*, worktree-*
 	Warnings         []string
 }
 
 // RecoverSummary counts what recovery did.
 type RecoverSummary struct {
-	WorktreesRemoved int `json:"worktrees_removed"`
-	BranchesDeleted  int `json:"branches_deleted"`
-	StoriesReset     int `json:"stories_reset"`
-	StoriesDelivered int `json:"stories_delivered"`
-	OrphanWorktrees  int `json:"orphan_worktrees"`
+	WorktreesRemoved     int `json:"worktrees_removed"`
+	BranchesDeleted      int `json:"branches_deleted"`
+	StoriesReset         int `json:"stories_reset"`
+	StoriesDelivered     int `json:"stories_delivered"`
+	OrphanWorktrees      int `json:"orphan_worktrees"`
+	StaleBranchesDeleted int `json:"stale_branches_deleted"`
 }
 
 // RecoverPlan is the full set of recovery actions with a summary.
@@ -126,6 +128,27 @@ func EvaluateRecover(cfg RecoverConfig) RecoverPlan {
 		}
 	}
 
+	// Stale merged branches: epic/*, story/*, worktree-* fully merged into main.
+	// Skip any already scheduled for deletion above.
+	scheduledBranches := make(map[string]bool)
+	for _, a := range plan.Actions {
+		if a.Kind == ActionDeleteBranch {
+			scheduledBranches[a.BranchName] = true
+		}
+	}
+	for _, branch := range cfg.StaleBranches {
+		if scheduledBranches[branch] {
+			continue
+		}
+		plan.Actions = append(plan.Actions, RecoverAction{
+			Kind:       ActionDeleteBranch,
+			BranchName: branch,
+			Reason:     "stale merged branch cleanup",
+		})
+		plan.Summary.BranchesDeleted++
+		plan.Summary.StaleBranchesDeleted++
+	}
+
 	return plan
 }
 
@@ -162,9 +185,17 @@ func BuildRecoverConfig(projectRoot string) (RecoverConfig, error) {
 	issues, err := QueryInProgress()
 	if err != nil {
 		cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("nd state unavailable: %v", err))
-		return cfg, nil
+	} else {
+		cfg.InProgressIssues = issues
 	}
-	cfg.InProgressIssues = issues
+
+	// List stale merged branches (epic/*, story/*, worktree-*)
+	staleBranches, err := ListMergedBranches(projectRoot)
+	if err != nil {
+		cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("stale branch detection unavailable: %v", err))
+	} else {
+		cfg.StaleBranches = staleBranches
+	}
 
 	return cfg, nil
 }
