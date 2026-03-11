@@ -295,7 +295,7 @@ func TestEvaluateRecover_StaleBranchDeduplication(t *testing.T) {
 		},
 		StaleBranches: []string{
 			"worktree-agent-abc", // same as orphan worktree branch
-			"epic/PROJ-old",     // genuinely stale
+			"epic/PROJ-old",      // genuinely stale
 		},
 	}
 
