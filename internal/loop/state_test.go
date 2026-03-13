@@ -217,3 +217,44 @@ func TestStateFileName_Value(t *testing.T) {
 		t.Errorf("unexpected state file name: %s", StateFileName())
 	}
 }
+
+func TestReadStateRoot_FindsAncestorState(t *testing.T) {
+	root := t.TempDir()
+	worktree := filepath.Join(root, ".claude", "worktrees", "agent-1")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState("all", "", 10)
+	if err := WriteState(root, state); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, foundRoot, err := ReadStateRoot(worktree)
+	if err != nil {
+		t.Fatalf("ReadStateRoot() error: %v", err)
+	}
+	if foundRoot != root {
+		t.Fatalf("expected root %s, got %s", root, foundRoot)
+	}
+	if !restored.Active {
+		t.Fatal("expected restored state to be active")
+	}
+}
+
+func TestIsActiveFrom_TrueWhenAncestorStateExists(t *testing.T) {
+	root := t.TempDir()
+	worktree := filepath.Join(root, ".claude", "worktrees", "agent-1")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState("all", "", 10)
+	if err := WriteState(root, state); err != nil {
+		t.Fatal(err)
+	}
+
+	if !IsActiveFrom(worktree) {
+		t.Fatal("expected nested worktree to detect ancestor loop state")
+	}
+}

@@ -300,13 +300,14 @@ func readStackDetectionSetting(cwd string) bool {
 // cleanupStaleLoop removes loop state left over from a previous session
 // when loop.persist_across_sessions is false (the default).
 func cleanupStaleLoop(cwd string) {
-	if !loop.IsActive(cwd) {
+	state, root, err := loop.ReadStateRoot(cwd)
+	if err != nil || !state.Active {
 		return
 	}
-	if isLoopPersistEnabled(cwd) {
+	if isLoopPersistEnabled(root) {
 		return
 	}
-	_ = loop.RemoveState(cwd)
+	_ = loop.RemoveState(root)
 }
 
 func staticOperatingMode() string {

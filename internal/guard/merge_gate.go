@@ -79,13 +79,41 @@ func CheckMergeGate(projectRoot, command string) Result {
 			}
 		}
 
-		if targetBranch, ok := currentBranch(projectRoot); ok && !strings.HasPrefix(targetBranch, "epic/") {
-			return Result{
-				Allowed: false,
-				Reason: fmt.Sprintf(
-					"BLOCKED: story branches may only merge into epic branches.\n\nCurrent branch: %s\nAttempted story branch: story/%s\n\nCheckout epic/%s before merging the accepted story branch.",
-					targetBranch, storyID, storyID,
-				),
+		parentEpic := ReadIssueParent(projectRoot, storyID)
+		if targetBranch, ok := currentBranch(projectRoot); ok {
+			if !strings.HasPrefix(targetBranch, "epic/") {
+				next := "the owning epic branch"
+				if parentEpic != "" {
+					next = "epic/" + parentEpic
+				}
+				return Result{
+					Allowed: false,
+					Reason: fmt.Sprintf(
+						"BLOCKED: story branches may only merge into epic branches.\n\nCurrent branch: %s\nAttempted story branch: story/%s\n\nCheckout %s before merging the accepted story branch.",
+						targetBranch, storyID, next,
+					),
+				}
+			}
+
+			if parentEpic == "" {
+				return Result{
+					Allowed: false,
+					Reason: fmt.Sprintf(
+						"BLOCKED: Cannot verify merge target for story/%s.\n\nThe nd issue is accepted and closed, but it has no parent epic recorded. Set the story parent before merging.",
+						storyID,
+					),
+				}
+			}
+
+			expectedBranch := "epic/" + parentEpic
+			if targetBranch != expectedBranch {
+				return Result{
+					Allowed: false,
+					Reason: fmt.Sprintf(
+						"BLOCKED: story branches must merge into their owning epic branch.\n\nCurrent branch: %s\nExpected branch: %s\nAttempted story branch: story/%s",
+						targetBranch, expectedBranch, storyID,
+					),
+				}
 			}
 		}
 	}
@@ -133,24 +161,10 @@ func mergeGateEnabled(projectRoot string) bool {
 // ReadIssueLabels reads labels from an nd issue's frontmatter.
 // Returns nil on any error (fail-open). Returns empty slice if no labels.
 func ReadIssueLabels(projectRoot, issueID string) []string {
-	path, err := issuePath(projectRoot, issueID)
-	if err != nil {
+	frontmatter, ok := readIssueFrontmatter(projectRoot, issueID)
+	if !ok {
 		return nil
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-
-	content := string(data)
-	if !strings.HasPrefix(content, "---") {
-		return nil
-	}
-	end := strings.Index(content[3:], "---")
-	if end == -1 {
-		return nil
-	}
-	frontmatter := content[3 : 3+end]
 
 	for _, line := range strings.Split(frontmatter, "\n") {
 		line = strings.TrimSpace(line)
@@ -163,12 +177,51 @@ func ReadIssueLabels(projectRoot, issueID string) []string {
 	return []string{}
 }
 
+// ReadIssueParent reads the parent epic ID from an nd issue's frontmatter.
+// Returns "" on any error or when no parent is recorded.
+func ReadIssueParent(projectRoot, issueID string) string {
+	frontmatter, ok := readIssueFrontmatter(projectRoot, issueID)
+	if !ok {
+		return ""
+	}
+
+	for _, line := range strings.Split(frontmatter, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "parent:") {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "parent:")), `"'`)
+	}
+	return ""
+}
+
 func issuePath(projectRoot, issueID string) (string, error) {
 	vaultDir, err := ndvault.Resolve(projectRoot)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(vaultDir, "issues", issueID+".md"), nil
+}
+
+func readIssueFrontmatter(projectRoot, issueID string) (string, bool) {
+	path, err := issuePath(projectRoot, issueID)
+	if err != nil {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+
+	content := string(data)
+	if !strings.HasPrefix(content, "---") {
+		return "", false
+	}
+	end := strings.Index(content[3:], "---")
+	if end == -1 {
+		return "", false
+	}
+	return content[3 : 3+end], true
 }
 
 // parseYAMLArray parses a YAML inline array like [a, b, c] into a string slice.

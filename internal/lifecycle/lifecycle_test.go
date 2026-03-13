@@ -540,3 +540,26 @@ func TestCleanupStaleLoop_NoopWhenNoState(t *testing.T) {
 	// No state file at all -- should not panic
 	cleanupStaleLoop(dir)
 }
+
+func TestCleanupStaleLoop_RemovesAncestorStateFromNestedWorktree(t *testing.T) {
+	root := t.TempDir()
+	worktree := filepath.Join(root, ".claude", "worktrees", "agent-1")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := `{"active":true,"mode":"all","iteration":5,"max_iterations":50,"consecutive_waits":0,"max_consecutive_waits":3,"wait_iterations":0,"started_at":"2026-03-06T18:00:00Z"}`
+	statePath := filepath.Join(root, ".vault", ".piv-loop-state.json")
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, []byte(state), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanupStaleLoop(worktree)
+
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatal("expected ancestor loop state file to be removed by default")
+	}
+}

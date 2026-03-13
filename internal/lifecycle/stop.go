@@ -19,7 +19,7 @@ func Stop() error {
 	cwd, _ := os.Getwd()
 
 	// Loop check: if active, handle loop logic and return early
-	if loop.IsActive(cwd) {
+	if loop.IsActiveFrom(cwd) {
 		return checkLoop(cwd)
 	}
 
@@ -88,7 +88,7 @@ Use: vlt vault="Claude" create name="<Title>" path="_inbox/<Title>.md" content="
 // On block: updates state and emits continuation JSON to stdout.
 // On allow: logs reason, removes state if needed.
 func checkLoop(cwd string) error {
-	state, err := loop.ReadState(cwd)
+	state, root, err := loop.ReadStateRoot(cwd)
 	if err != nil {
 		// State disappeared -- fail open, allow exit
 		fmt.Fprintln(os.Stderr, "[LOOP] Could not read loop state, allowing exit")
@@ -96,7 +96,7 @@ func checkLoop(cwd string) error {
 	}
 
 	// Query nd for work counts -- fail open on error
-	wc, err := loop.QueryWorkCounts(cwd, state.Mode, state.TargetEpic)
+	wc, err := loop.QueryWorkCounts(root, state.Mode, state.TargetEpic)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[LOOP] Could not query nd: %v -- allowing exit with loop state preserved\n", err)
 		return nil
@@ -106,7 +106,7 @@ func checkLoop(cwd string) error {
 		Active:         state.Active,
 		Mode:           state.Mode,
 		TargetEpic:     state.TargetEpic,
-		PersistState:   isLoopPersistEnabled(cwd),
+		PersistState:   isLoopPersistEnabled(root),
 		Iteration:      state.Iteration,
 		MaxIterations:  state.MaxIterations,
 		ConsecWaits:    state.ConsecutiveWaits,
@@ -124,14 +124,14 @@ func checkLoop(cwd string) error {
 	if decision.Allow {
 		fmt.Fprintf(os.Stderr, "[LOOP] %s\n", decision.Reason)
 		if decision.RemoveState {
-			_ = loop.RemoveState(cwd)
+			_ = loop.RemoveState(root)
 		} else {
 			// Escape valve: keep state active but update counters (reset ConsecWaits).
 			// Background agent completions will resume the loop in a new session.
 			state.Iteration = decision.NewIteration
 			state.ConsecutiveWaits = decision.NewConsecWaits
 			state.WaitIterations = decision.NewWaitIters
-			_ = loop.WriteState(cwd, state)
+			_ = loop.WriteState(root, state)
 		}
 		return nil
 	}
@@ -140,7 +140,7 @@ func checkLoop(cwd string) error {
 	state.Iteration = decision.NewIteration
 	state.ConsecutiveWaits = decision.NewConsecWaits
 	state.WaitIterations = decision.NewWaitIters
-	if err := loop.WriteState(cwd, state); err != nil {
+	if err := loop.WriteState(root, state); err != nil {
 		fmt.Fprintf(os.Stderr, "[LOOP] Could not update state: %v -- allowing exit\n", err)
 		return nil
 	}

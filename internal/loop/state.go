@@ -68,6 +68,26 @@ func ReadState(projectRoot string) (*State, error) {
 	return &state, nil
 }
 
+// ReadStateRoot reads loop state from the nearest ancestor project root and
+// returns both the state and the root directory that owns it.
+func ReadStateRoot(start string) (*State, string, error) {
+	path, root, err := findStateFile(start)
+	if err != nil {
+		return nil, "", err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, "", fmt.Errorf("parse loop state: %w", err)
+	}
+	return &state, root, nil
+}
+
 // WriteState persists the loop state to disk.
 func WriteState(projectRoot string, state *State) error {
 	path := StatePath(projectRoot)
@@ -101,4 +121,31 @@ func IsActive(projectRoot string) bool {
 		return false
 	}
 	return state.Active
+}
+
+// IsActiveFrom checks for an active loop state in the caller directory or any
+// ancestor directory. This lets nested worktrees reuse the orchestrator state.
+func IsActiveFrom(start string) bool {
+	state, _, err := ReadStateRoot(start)
+	if err != nil {
+		return false
+	}
+	return state.Active
+}
+
+func findStateFile(start string) (path, root string, err error) {
+	dir := filepath.Clean(start)
+	for {
+		candidate := StatePath(dir)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", "", os.ErrNotExist
 }

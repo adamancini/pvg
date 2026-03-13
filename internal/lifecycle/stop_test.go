@@ -178,3 +178,35 @@ func TestCheckLoop_PreservesStateWhenNDQueryFails(t *testing.T) {
 		t.Errorf("expected wait iterations %d preserved, got %d", state.WaitIterations, preserved.WaitIterations)
 	}
 }
+
+func TestCheckLoop_UsesAncestorLoopStateFromNestedWorktree(t *testing.T) {
+	root := t.TempDir()
+	worktree := filepath.Join(root, ".claude", "worktrees", "agent-1")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := loop.NewState("all", "", 50)
+	if err := loop.WriteState(root, state); err != nil {
+		t.Fatalf("WriteState() error: %v", err)
+	}
+
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ndPath := filepath.Join(binDir, "nd")
+	script := "#!/bin/sh\nprintf '[]\\n'\n"
+	if err := os.WriteFile(ndPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := checkLoop(worktree); err != nil {
+		t.Fatalf("checkLoop() error: %v", err)
+	}
+
+	if _, err := os.Stat(loop.StatePath(root)); !os.IsNotExist(err) {
+		t.Fatal("expected ancestor loop state to be removed when backlog is empty")
+	}
+}
