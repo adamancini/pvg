@@ -70,6 +70,36 @@ func TestResolve_UsesEnvironmentOverride(t *testing.T) {
 	}
 }
 
+func TestResolve_PrefersSharedVaultFromNestedWorktree(t *testing.T) {
+	projectRoot, sharedVault := setupPaivotWorktree(t)
+
+	worktreeRoot := filepath.Join(projectRoot, ".claude", "worktrees", "agent-1")
+	worktreeGitDir := filepath.Join(filepath.Dir(sharedVault), "..", "worktrees", "agent-1")
+
+	if err := os.MkdirAll(worktreeRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(worktreeGitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	gitPtr := "gitdir: " + filepath.ToSlash(worktreeGitDir) + "\n"
+	if err := os.WriteFile(filepath.Join(worktreeRoot, ".git"), []byte(gitPtr), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktreeGitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Resolve(worktreeRoot)
+	if err != nil {
+		t.Fatalf("Resolve() error: %v", err)
+	}
+	if got != sharedVault {
+		t.Fatalf("Resolve() from nested worktree = %q, want %q", got, sharedVault)
+	}
+}
+
 func setupPaivotWorktree(t *testing.T) (projectRoot, sharedVault string) {
 	t.Helper()
 

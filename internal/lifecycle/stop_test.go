@@ -1,6 +1,8 @@
 package lifecycle
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -130,5 +132,49 @@ func TestBuildContinuationPrompt_Header(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Other: 5") {
 		t.Error("expected Other count in header")
+	}
+}
+
+func TestCheckLoop_PreservesStateWhenNDQueryFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".vault"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := loop.NewState("all", "", 50)
+	state.Iteration = 7
+	state.ConsecutiveWaits = 2
+	state.WaitIterations = 2
+	if err := loop.WriteState(dir, state); err != nil {
+		t.Fatalf("WriteState() error: %v", err)
+	}
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	ndPath := filepath.Join(binDir, "nd")
+	script := "#!/bin/sh\nexit 1\n"
+	if err := os.WriteFile(ndPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := checkLoop(dir); err != nil {
+		t.Fatalf("checkLoop() error: %v", err)
+	}
+
+	preserved, err := loop.ReadState(dir)
+	if err != nil {
+		t.Fatalf("expected loop state to remain after nd query failure: %v", err)
+	}
+	if preserved.Iteration != state.Iteration {
+		t.Errorf("expected iteration %d preserved, got %d", state.Iteration, preserved.Iteration)
+	}
+	if preserved.ConsecutiveWaits != state.ConsecutiveWaits {
+		t.Errorf("expected consecutive waits %d preserved, got %d", state.ConsecutiveWaits, preserved.ConsecutiveWaits)
+	}
+	if preserved.WaitIterations != state.WaitIterations {
+		t.Errorf("expected wait iterations %d preserved, got %d", state.WaitIterations, preserved.WaitIterations)
 	}
 }

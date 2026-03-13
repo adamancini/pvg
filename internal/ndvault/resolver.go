@@ -40,19 +40,27 @@ func Resolve(projectRoot string) (string, error) {
 }
 
 func isPaivotManaged(projectRoot string) bool {
-	candidates := []string{
-		filepath.Join(projectRoot, ".vault", "knowledge", ".settings.yaml"),
-		filepath.Join(projectRoot, ".vault", "knowledge"),
-		filepath.Join(projectRoot, ".vault", ".dispatcher-state.json"),
-		filepath.Join(projectRoot, ".vault", ".piv-loop-state.json"),
-	}
-
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return true
+	dir := filepath.Clean(projectRoot)
+	for {
+		candidates := []string{
+			filepath.Join(dir, ".vault", "knowledge", ".settings.yaml"),
+			filepath.Join(dir, ".vault", "knowledge"),
+			filepath.Join(dir, ".vault", ".dispatcher-state.json"),
+			filepath.Join(dir, ".vault", ".piv-loop-state.json"),
 		}
-	}
 
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				return true
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
 	return false
 }
 

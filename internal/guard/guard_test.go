@@ -57,6 +57,28 @@ func TestCheckBash_AllowsVltCommands(t *testing.T) {
 	}
 }
 
+func TestCheckBash_BlocksVltPipeToProtectedDir(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `vlt vault="Claude" read file="Developer Agent" | tee "` + testVaultDir + `/decisions/Hack.md"`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected piped vlt command to protected dir blocked, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksVltRedirectToProtectedDir(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `vlt vault="Claude" read file="Developer Agent" > "` + testVaultDir + `/decisions/Hack.md"`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected redirected vlt command to protected dir blocked, got allowed")
+	}
+}
+
 func TestCheckBash_AllowsSafeCommands(t *testing.T) {
 	input := HookInput{
 		ToolName:  "Bash",
@@ -87,6 +109,17 @@ func TestCheckBash_BlocksCpToProtectedDir(t *testing.T) {
 	result := Check(testVaultDir, testProjectRoot, input)
 	if result.Allowed {
 		t.Errorf("expected blocked for cp to conventions/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksRmFromProtectedDir(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `rm "` + testVaultDir + `/decisions/ADR-001.md"`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for rm in decisions/, got allowed")
 	}
 }
 
@@ -235,6 +268,80 @@ func TestCheckBash_AllowsProjectVaultVlt(t *testing.T) {
 	result := Check(testVaultDir, testProjectRoot, input)
 	if !result.Allowed {
 		t.Errorf("expected vlt command for project vault allowed, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_BlocksProjectVaultRm(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `rm .vault/knowledge/patterns/test.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for rm in .vault/knowledge/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksProjectVaultVltRedirect(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `vlt vault=".vault/knowledge" read file="patterns/test" > .vault/knowledge/patterns/hack.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for redirected vlt command into .vault/knowledge/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksMixedVltAndProtectedWrite(t *testing.T) {
+	input := HookInput{
+		ToolName: "Bash",
+		ToolInput: ToolInput{
+			Command: `vlt vault="Claude" read file="Developer Agent"; rm "` + testVaultDir + `/methodology/Developer Agent.md"`,
+		},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for mixed vlt + direct protected write, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksVltSubshellProtectedWrite(t *testing.T) {
+	input := HookInput{
+		ToolName: "Bash",
+		ToolInput: ToolInput{
+			Command: `vlt vault="Claude" read file="Developer Agent" $(rm "` + testVaultDir + `/methodology/Developer Agent.md")`,
+		},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for vlt subshell direct protected write, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksMixedNDAndIssueWrite(t *testing.T) {
+	input := HookInput{
+		ToolName: "Bash",
+		ToolInput: ToolInput{
+			Command: `nd list --json; rm paivot/nd-vault/issues/PROJ-a1b.md`,
+		},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for mixed nd + direct issue write, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksNDBacktickIssueWrite(t *testing.T) {
+	input := HookInput{
+		ToolName: "Bash",
+		ToolInput: ToolInput{
+			Command: "nd list --json `rm paivot/nd-vault/issues/PROJ-a1b.md`",
+		},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for nd backtick direct issue write, got allowed")
 	}
 }
 
@@ -559,6 +666,17 @@ func TestCheckBash_BlocksProjectIssuesRm(t *testing.T) {
 	result := Check(testVaultDir, testProjectRoot, input)
 	if result.Allowed {
 		t.Errorf("expected blocked for rm on .vault/issues/, got allowed")
+	}
+}
+
+func TestCheckBash_BlocksNDPipeToProjectIssues(t *testing.T) {
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd list --json | tee .vault/issues/PROJ-001.md`},
+	}
+	result := Check(testVaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for piped nd command into .vault/issues/, got allowed")
 	}
 }
 

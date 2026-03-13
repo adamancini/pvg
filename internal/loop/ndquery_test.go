@@ -170,3 +170,21 @@ func TestCountOtherIssues(t *testing.T) {
 		t.Fatalf("expected 2 other issues, got %d", got)
 	}
 }
+
+func TestQueryWorkCounts_ReturnsErrorWhenNDQueriesFail(t *testing.T) {
+	oldExec := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		return exec.Command("false")
+	}
+	defer func() { execCommand = oldExec }()
+
+	override := filepath.Join(t.TempDir(), "shared-vault")
+	if err := os.Setenv("ND_VAULT_DIR", override); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	if _, err := QueryWorkCounts(t.TempDir(), "all", ""); err == nil {
+		t.Fatal("expected QueryWorkCounts to return an error when nd queries fail")
+	}
+}

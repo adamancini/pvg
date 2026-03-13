@@ -219,6 +219,7 @@ func TestEvaluateStop_WaitLike_ThresholdReached(t *testing.T) {
 		ConsecWaits:    2,
 		MaxConsecWaits: 3,
 		WaitIterations: 2,
+		PersistState:   true,
 		InProgress:     2,
 	})
 	if !d.Allow {
@@ -232,6 +233,25 @@ func TestEvaluateStop_WaitLike_ThresholdReached(t *testing.T) {
 	}
 	if d.Reason != "No progress after consecutive wait iterations" {
 		t.Errorf("unexpected reason: %s", d.Reason)
+	}
+}
+
+func TestEvaluateStop_WaitLike_ThresholdReachedWithoutPersistence(t *testing.T) {
+	d := EvaluateStop(StopConfig{
+		Active:         true,
+		Iteration:      7,
+		MaxIterations:  50,
+		ConsecWaits:    2,
+		MaxConsecWaits: 3,
+		WaitIterations: 2,
+		PersistState:   false,
+		InProgress:     2,
+	})
+	if !d.Allow {
+		t.Error("expected allow at wait threshold")
+	}
+	if !d.RemoveState {
+		t.Error("expected state removal when persistence is disabled")
 	}
 }
 
@@ -292,6 +312,7 @@ func TestEvaluateStop_ActionableThreshold_AllowsExit(t *testing.T) {
 		ConsecWaits:    2,
 		MaxConsecWaits: 3,
 		WaitIterations: 2,
+		PersistState:   true,
 		Ready:          3,
 		Delivered:      2,
 	})
@@ -306,6 +327,26 @@ func TestEvaluateStop_ActionableThreshold_AllowsExit(t *testing.T) {
 	}
 	if d.Reason != "No progress after consecutive wait iterations" {
 		t.Errorf("unexpected reason: %s", d.Reason)
+	}
+}
+
+func TestEvaluateStop_ActionableThreshold_RemovesStateWithoutPersistence(t *testing.T) {
+	d := EvaluateStop(StopConfig{
+		Active:         true,
+		Iteration:      10,
+		MaxIterations:  50,
+		ConsecWaits:    2,
+		MaxConsecWaits: 3,
+		WaitIterations: 2,
+		PersistState:   false,
+		Ready:          3,
+		Delivered:      2,
+	})
+	if !d.Allow {
+		t.Error("expected allow when actionable threshold reached")
+	}
+	if !d.RemoveState {
+		t.Error("expected state removal when persistence is disabled")
 	}
 }
 

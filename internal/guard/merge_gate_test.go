@@ -2,6 +2,7 @@ package guard
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -270,6 +271,79 @@ func TestCheckMergeGate_UsesSharedVaultOverLocalBranchState(t *testing.T) {
 	r := CheckMergeGate(dir, "git merge origin/story/PROJ-a1b2")
 	if !r.Allowed {
 		t.Fatalf("expected shared vault state to allow merge, got blocked: %s", r.Reason)
+	}
+}
+
+func TestCheckMergeGate_BlocksStoryMergeIntoMain(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Test User")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+
+	writeProjectSettings(t, repo)
+	sharedVault := filepath.Join(repo, ".git", "paivot", "nd-vault")
+	issuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(issuesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: Test\nstatus: closed\nlabels: [delivered, accepted]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-a1b2.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(repo, "git merge --no-ff origin/story/PROJ-a1b2 -m \"merge\"")
+	if r.Allowed {
+		t.Fatal("expected blocked for merging story branch into main")
+	}
+}
+
+func TestCheckMergeGate_EnforcedFromNestedWorktreeUsingRootSettings(t *testing.T) {
+	dir, sharedVault := setupPaivotWorktree(t)
+	writeProjectSettings(t, dir)
+
+	worktreeRoot := filepath.Join(dir, ".claude", "worktrees", "agent-1")
+	worktreeGitDir := filepath.Join(sharedVault, "..", "..", "worktrees", "agent-1")
+	if err := os.MkdirAll(worktreeRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(worktreeGitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitPtr := "gitdir: " + filepath.ToSlash(worktreeGitDir) + "\n"
+	if err := os.WriteFile(filepath.Join(worktreeRoot, ".git"), []byte(gitPtr), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktreeGitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	issuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(issuesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: Test\nstatus: in_progress\nlabels: [delivered]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-a1b2.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(worktreeRoot, "git merge origin/story/PROJ-a1b2")
+	if r.Allowed {
+		t.Fatal("expected nested worktree merge gate to enforce using root Paivot settings")
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, out)
 	}
 }
 

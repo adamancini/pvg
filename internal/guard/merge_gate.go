@@ -3,6 +3,7 @@ package guard
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -77,6 +78,16 @@ func CheckMergeGate(projectRoot, command string) Result {
 				Reason:  fmt.Sprintf(mergeGateBlockMsg, storyID),
 			}
 		}
+
+		if targetBranch, ok := currentBranch(projectRoot); ok && !strings.HasPrefix(targetBranch, "epic/") {
+			return Result{
+				Allowed: false,
+				Reason: fmt.Sprintf(
+					"BLOCKED: story branches may only merge into epic branches.\n\nCurrent branch: %s\nAttempted story branch: story/%s\n\nCheckout epic/%s before merging the accepted story branch.",
+					targetBranch, storyID, storyID,
+				),
+			}
+		}
 	}
 
 	return Result{
@@ -106,17 +117,17 @@ func parseStoryRefs(command string) []string {
 }
 
 func mergeGateEnabled(projectRoot string) bool {
-	if loop.IsActive(projectRoot) {
+	if isLoopActiveFrom(projectRoot) {
 		return true
 	}
 
-	state, err := dispatcher.ReadState(projectRoot)
+	state, _, err := dispatcher.ReadStateRoot(projectRoot)
 	if err == nil && state.Enabled {
 		return true
 	}
 
-	_, err = os.Stat(filepath.Join(projectRoot, projectSettingsPath))
-	return err == nil
+	_, root, found := findAncestorPath(projectRoot, filepath.Join(".vault", "knowledge", ".settings.yaml"))
+	return found && root != ""
 }
 
 // ReadIssueLabels reads labels from an nd issue's frontmatter.
@@ -181,4 +192,42 @@ func parseYAMLArray(s string) []string {
 		}
 	}
 	return result
+}
+
+func currentBranch(projectRoot string) (string, bool) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" {
+		return "", false
+	}
+	return branch, true
+}
+
+func isLoopActiveFrom(projectRoot string) bool {
+	path, root, found := findAncestorPath(projectRoot, filepath.Join(".vault", loop.StateFileName()))
+	if !found || root == "" || path == "" {
+		return false
+	}
+	return loop.IsActive(root)
+}
+
+func findAncestorPath(start, rel string) (string, string, bool) {
+	dir := filepath.Clean(start)
+	for {
+		candidate := filepath.Join(dir, rel)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", "", false
 }

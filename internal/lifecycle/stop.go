@@ -98,8 +98,7 @@ func checkLoop(cwd string) error {
 	// Query nd for work counts -- fail open on error
 	wc, err := loop.QueryWorkCounts(cwd, state.Mode, state.TargetEpic)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[LOOP] Could not query nd: %v -- allowing exit\n", err)
-		_ = loop.RemoveState(cwd)
+		fmt.Fprintf(os.Stderr, "[LOOP] Could not query nd: %v -- allowing exit with loop state preserved\n", err)
 		return nil
 	}
 
@@ -107,6 +106,7 @@ func checkLoop(cwd string) error {
 		Active:         state.Active,
 		Mode:           state.Mode,
 		TargetEpic:     state.TargetEpic,
+		PersistState:   isLoopPersistEnabled(cwd),
 		Iteration:      state.Iteration,
 		MaxIterations:  state.MaxIterations,
 		ConsecWaits:    state.ConsecutiveWaits,

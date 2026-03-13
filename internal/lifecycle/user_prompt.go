@@ -26,7 +26,8 @@ var triggerPhrases = []string{
 // dispatcherActivationContext is the full context injected when dispatcher mode
 // is first activated by a trigger phrase.
 const dispatcherActivationContext = "DISPATCHER MODE ACTIVE. You are a coordinator only. " +
-	"Do NOT write D&F files, source code, or stories directly. Spawn the appropriate agent instead. " +
+	"Do NOT write D&F files directly; those are structurally guarded. source code, tests, and stories must also be produced by the appropriate agent rather than by you. " +
+	"Spawn the appropriate agent for any production work. " +
 	"BLT QUESTIONING PROTOCOL: When a BLT agent (BA, Designer, Architect) returns output, " +
 	"check for a QUESTIONS_FOR_USER block BEFORE checking for a document. " +
 	"The agent's first output in any D&F engagement MUST be questions, not a document. " +
@@ -38,7 +39,7 @@ const dispatcherActivationContext = "DISPATCHER MODE ACTIVE. You are a coordinat
 // re-injected continuously rather than relying on the original activation
 // message persisting in compressed context.
 const dispatcherReminderContext = "DISPATCHER MODE REMINDER: You are a coordinator, NOT a producer. " +
-	"Do NOT write BUSINESS.md, DESIGN.md, ARCHITECTURE.md, source code, test files, or story files yourself. " +
+	"Do NOT write BUSINESS.md, DESIGN.md, or ARCHITECTURE.md yourself; the guard will block those. source code, test files, and story files must still be delegated to the appropriate agent. " +
 	"Spawn the appropriate agent for any production work. " +
 	"If you are about to write a file that an agent should produce, STOP and spawn the agent instead."
 

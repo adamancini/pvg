@@ -39,39 +39,37 @@ func QueryWorkCounts(projectRoot, mode, targetEpic string) (WorkCounts, error) {
 // queryAllCounts uses nd subcommands to gather counts across the whole backlog.
 func queryAllCounts(projectRoot string) (WorkCounts, error) {
 	var wc WorkCounts
-	readyOK := false
-	ipOK := false
-	blockedOK := false
 	readyIssues, err := runND(projectRoot, "ready", "--json")
-	if err == nil {
-		wc.Ready = len(readyIssues)
-		readyOK = true
+	if err != nil {
+		return wc, fmt.Errorf("query ready work: %w", err)
 	}
+	wc.Ready = len(readyIssues)
 
 	// In-progress issues (includes delivered -- we separate below)
 	ipIssues, err := runND(projectRoot, "list", "--status", "in_progress", "--json")
-	if err == nil {
-		ipOK = true
-		for _, issue := range ipIssues {
-			if hasLabel(issue.Labels, "delivered") {
-				wc.Delivered++
-			} else {
-				wc.InProgress++
-			}
+	if err != nil {
+		return wc, fmt.Errorf("query in-progress work: %w", err)
+	}
+	for _, issue := range ipIssues {
+		if hasLabel(issue.Labels, "delivered") {
+			wc.Delivered++
+		} else {
+			wc.InProgress++
 		}
 	}
 
 	// Blocked issues
 	blockedIssues, err := runND(projectRoot, "blocked", "--json")
-	if err == nil {
-		wc.Blocked = len(blockedIssues)
-		blockedOK = true
+	if err != nil {
+		return wc, fmt.Errorf("query blocked work: %w", err)
 	}
+	wc.Blocked = len(blockedIssues)
 
 	allIssues, err := runND(projectRoot, "list", "--status", "!closed", "--json")
-	if err == nil && readyOK && ipOK && blockedOK {
-		wc.Other = countOtherIssues(readyIssues, ipIssues, blockedIssues, allIssues)
+	if err != nil {
+		return wc, fmt.Errorf("query non-closed work: %w", err)
 	}
+	wc.Other = countOtherIssues(readyIssues, ipIssues, blockedIssues, allIssues)
 
 	return wc, nil
 }

@@ -6,6 +6,7 @@ type StopConfig struct {
 	Active         bool
 	Mode           string
 	TargetEpic     string
+	PersistState   bool
 	Iteration      int
 	MaxIterations  int // 0 = unlimited
 	ConsecWaits    int
@@ -93,7 +94,7 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 		return StopDecision{
 			Allow:          true,
 			Reason:         "No progress after consecutive wait iterations",
-			RemoveState:    false, // keep state -- background agents will resume
+			RemoveState:    !cfg.PersistState,
 			NewIteration:   nextIter,
 			NewConsecWaits: 0, // reset budget for next session
 			NewWaitIters:   newWaitIters,

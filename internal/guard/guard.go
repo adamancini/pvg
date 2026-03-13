@@ -176,7 +176,7 @@ func checkBashCommand(vaultDir, command string) Result {
 
 	// vlt commands are the intended mechanism -- always allow
 	trimmed := strings.TrimSpace(command)
-	if strings.HasPrefix(trimmed, "vlt ") || strings.HasPrefix(trimmed, "vlt\t") {
+	if isBareToolInvocation(trimmed, "vlt") {
 		return Result{Allowed: true}
 	}
 
@@ -207,7 +207,7 @@ func checkBashCommand(vaultDir, command string) Result {
 		// Check file operation commands where protected path is the
 		// destination (typically the last path argument).
 		destPatterns := []string{
-			"tee ", "cp ", "mv ", "cat >",
+			"tee ", "cp ", "mv ", "cat >", "rm ",
 			"sed -i", "perl -pi", "install ", "rsync ", "dd ", "patch ",
 		}
 		for _, pattern := range destPatterns {
@@ -292,7 +292,7 @@ func checkBashProjectVault(projectRoot, command string) Result {
 	}
 
 	trimmed := strings.TrimSpace(command)
-	if strings.HasPrefix(trimmed, "vlt ") || strings.HasPrefix(trimmed, "vlt\t") {
+	if isBareToolInvocation(trimmed, "vlt") {
 		return Result{Allowed: true}
 	}
 
@@ -313,7 +313,7 @@ func checkBashProjectVault(projectRoot, command string) Result {
 
 	// Check write commands with protected path.
 	writePatterns := []string{
-		"tee ", "cp ", "mv ", "cat >", "mkdir ",
+		"tee ", "cp ", "mv ", "cat >", "mkdir ", "rm ",
 		"sed -i", "perl -pi", "install ", "rsync ", "dd ", "patch ",
 	}
 	for _, pattern := range writePatterns {
@@ -365,7 +365,7 @@ func checkBashProjectIssues(projectRoot, command string) Result {
 
 	trimmed := strings.TrimSpace(command)
 	// nd commands are the intended mechanism -- always allow
-	if strings.HasPrefix(trimmed, "nd ") || strings.HasPrefix(trimmed, "nd\t") {
+	if isBareToolInvocation(trimmed, "nd") {
 		return Result{Allowed: true}
 	}
 
@@ -477,4 +477,58 @@ func appendUniquePrefix(prefixes []string, prefix string) []string {
 		}
 	}
 	return append(prefixes, prefix)
+}
+
+func isBareToolInvocation(command, tool string) bool {
+	if !(command == tool || strings.HasPrefix(command, tool+" ") || strings.HasPrefix(command, tool+"\t")) {
+		return false
+	}
+	return !hasShellComposition(command)
+}
+
+func hasShellComposition(command string) bool {
+	inSingle := false
+	inDouble := false
+	escaped := false
+
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if inSingle {
+			if ch == '\'' {
+				inSingle = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '\\':
+			escaped = true
+		case '\'':
+			inSingle = true
+		case '"':
+			inDouble = !inDouble
+		case '`':
+			return true
+		case '$':
+			if i+1 < len(command) && command[i+1] == '(' {
+				return true
+			}
+		case ';', '|', '>', '<', '\n':
+			if !inDouble {
+				return true
+			}
+		case '&':
+			if !inDouble {
+				return true
+			}
+		}
+	}
+
+	return false
 }

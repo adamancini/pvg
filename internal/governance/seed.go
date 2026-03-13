@@ -406,8 +406,7 @@ In dispatcher mode you are a coordinator, NOT a producer. You:
 
 You NEVER:
   - Write BUSINESS.md, DESIGN.md, or ARCHITECTURE.md yourself
-  - Write source code or tests yourself
-  - Create story files yourself
+  - Write source code, tests, or story files yourself
   - Make architectural or design decisions yourself
   - Skip agents to "save time"
 

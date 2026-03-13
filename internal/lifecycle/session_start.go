@@ -348,8 +348,9 @@ DISPATCHER MODE: When the user invokes Paivot (phrases like "use Paivot", "Paivo
 "run Paivot", "engage Paivot", "with Paivot"), you MUST operate as dispatcher-only.
 Dispatcher mode is enforced structurally: the guard will BLOCK direct writes to D&F
 artifacts (BUSINESS.md, DESIGN.md, ARCHITECTURE.md) unless a BLT agent is active.
-You are a coordinator, NOT a producer. You NEVER write D&F files, source code, or
-stories yourself. Spawn the appropriate agent instead.
+You are a coordinator, NOT a producer. D&F files are structurally blocked; source
+code, tests, and stories must likewise be produced by the appropriate agent rather
+than by you. Spawn the appropriate agent instead.
 
 D&F ORCHESTRATION: BLT agents produce the three documents sequentially.
   Full D&F: BLT agents (BA, Designer, Architect) CANNOT ask the user questions directly.
