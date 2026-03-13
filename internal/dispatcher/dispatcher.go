@@ -221,6 +221,19 @@ func HasActiveBLTAgent(state *State) bool {
 	return len(state.ActiveAgents) > 0
 }
 
+// HasActiveAgentType returns true if a specific BLT agent type is currently tracked.
+func HasActiveAgentType(state *State, agentType string) bool {
+	if state == nil {
+		return false
+	}
+	for _, activeType := range state.ActiveAgents {
+		if activeType == agentType {
+			return true
+		}
+	}
+	return false
+}
+
 // StateFileName returns the state file basename (for guard exemption checks).
 func StateFileName() string {
 	return stateFile

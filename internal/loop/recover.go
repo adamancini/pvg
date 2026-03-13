@@ -182,7 +182,7 @@ func BuildRecoverConfig(projectRoot string) (RecoverConfig, error) {
 	cfg.CurrentWorktrees = worktrees
 
 	// Query nd for in-progress issues
-	issues, err := QueryInProgress()
+	issues, err := QueryInProgress(projectRoot)
 	if err != nil {
 		cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("nd state unavailable: %v", err))
 	} else {

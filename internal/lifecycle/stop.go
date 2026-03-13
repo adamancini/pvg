@@ -96,7 +96,7 @@ func checkLoop(cwd string) error {
 	}
 
 	// Query nd for work counts -- fail open on error
-	wc, err := loop.QueryWorkCounts(state.Mode, state.TargetEpic)
+	wc, err := loop.QueryWorkCounts(cwd, state.Mode, state.TargetEpic)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[LOOP] Could not query nd: %v -- allowing exit\n", err)
 		_ = loop.RemoveState(cwd)
@@ -215,7 +215,7 @@ func BuildContinuationPrompt(state *loop.State, decision *loop.StopDecision, max
 	prompt += "Concurrency: max 2 dev, max 1 PM, max 3 total. Dispatcher-only.\n"
 
 	if state.Mode == "epic" && state.TargetEpic != "" {
-		prompt += fmt.Sprintf("Scope: epic %s only.\n", state.TargetEpic)
+		prompt += fmt.Sprintf("Priority epic: %s. Continue with the rest of the backlog once it is empty.\n", state.TargetEpic)
 	}
 
 	return prompt

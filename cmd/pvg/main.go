@@ -38,6 +38,7 @@ import (
 	"github.com/paivot-ai/pvg/internal/guard"
 	"github.com/paivot-ai/pvg/internal/lifecycle"
 	"github.com/paivot-ai/pvg/internal/loop"
+	"github.com/paivot-ai/pvg/internal/ndvault"
 	"github.com/paivot-ai/pvg/internal/settings"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
 	"github.com/paivot-ai/pvg/internal/verify"
@@ -159,13 +160,18 @@ Commands:
 }
 
 func ensureNDInitialized(cwd string) error {
-	ndConfigPath := filepath.Join(cwd, ".vault", ".nd.yaml")
-	_, err := os.Stat(ndConfigPath)
+	vaultDir, err := ndvault.Resolve(cwd)
+	if err != nil {
+		return fmt.Errorf("resolve nd vault: %w", err)
+	}
+
+	ndConfigPath := filepath.Join(vaultDir, ".nd.yaml")
+	_, err = os.Stat(ndConfigPath)
 	if err == nil {
 		return nil
 	}
 	if os.IsNotExist(err) {
-		return fmt.Errorf("nd is not initialized in this repo (.vault/.nd.yaml missing); initialize nd before using Paivot execution commands")
+		return fmt.Errorf("nd is not initialized for this repo (%s missing); initialize nd before using Paivot execution commands", ndConfigPath)
 	}
 	return fmt.Errorf("check nd initialization: %w", err)
 }
@@ -386,7 +392,7 @@ func loopSetup(cwd string, args []string) error {
 
 	// Validate epic if specified
 	if mode == "epic" {
-		if err := loop.ValidateEpic(epicID); err != nil {
+		if err := loop.ValidateEpic(cwd, epicID); err != nil {
 			return fmt.Errorf("validate epic: %w", err)
 		}
 	}

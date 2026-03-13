@@ -188,7 +188,7 @@ func ListMergedBranches(projectRoot string) ([]string, error) {
 // assembles a snapshot. agentAssignments maps story IDs to agent types
 // (e.g. "PROJ-a1b" -> "developer"). It is optional.
 func BuildSnapshot(projectRoot string, agentAssignments map[string]string) (*Snapshot, error) {
-	issues, err := QueryInProgress()
+	issues, err := QueryInProgress(projectRoot)
 	if err != nil {
 		return nil, fmt.Errorf("query in-progress issues: %w", err)
 	}

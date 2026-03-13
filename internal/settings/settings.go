@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/paivot-ai/pvg/internal/ndvault"
 )
 
 const settingsFile = ".vault/knowledge/.settings.yaml"
@@ -25,9 +27,9 @@ var defaults = map[string]string{
 	"proposal_expiry_days":         "30",
 	"auto_init_project_vault":      "ask",
 	"workflow.fsm":                 "false",
-	"workflow.sequence":            "open,in_progress,delivered,review,closed",
-	"workflow.exit_rules":          "blocked:open,in_progress;rejected:in_progress",
-	"workflow.custom_statuses":     "delivered,review,rejected",
+	"workflow.sequence":            "open,in_progress,closed",
+	"workflow.exit_rules":          "blocked:open,in_progress;deferred:open,in_progress",
+	"workflow.custom_statuses":     "",
 	"dnf.specialist_review":        "false",
 	"dnf.max_iterations":           "3",
 	"architecture.c4":              "false",
@@ -56,7 +58,7 @@ func Run(args []string) error {
 		return showSetting(path, strings.TrimSpace(args[0]))
 	}
 
-	return setSettings(path, args)
+	return setSettings(cwd, path, args)
 }
 
 func showSettings(path string) error {
@@ -109,7 +111,7 @@ func showSetting(path, key string) error {
 	return fmt.Errorf("unknown setting %q", key)
 }
 
-func setSettings(path string, args []string) error {
+func setSettings(projectRoot, path string, args []string) error {
 	settings := loadSettings(path)
 
 	workflowChanged := false
@@ -138,7 +140,7 @@ func setSettings(path string, args []string) error {
 	}
 
 	if workflowChanged {
-		syncNdConfig(settings)
+		syncNdConfig(projectRoot, settings)
 	}
 
 	return nil
@@ -203,7 +205,12 @@ func Default(key string) string {
 }
 
 // syncNdConfig propagates workflow settings to nd. Non-fatal on failure.
-func syncNdConfig(settings map[string]string) {
+func syncNdConfig(projectRoot string, settings map[string]string) {
+	vaultDir, err := ndvault.Resolve(projectRoot)
+	if err != nil {
+		return
+	}
+
 	enabled := settings["workflow.fsm"] == "true"
 	if enabled {
 		custom := settingOrDefault(settings, "workflow.custom_statuses")
@@ -211,17 +218,17 @@ func syncNdConfig(settings map[string]string) {
 		rules := settingOrDefault(settings, "workflow.exit_rules")
 
 		if custom != "" {
-			_ = execCommand("nd", "config", "set", "status.custom", custom).Run()
+			_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.custom", custom).Run()
 		}
 		if sequence != "" {
-			_ = execCommand("nd", "config", "set", "status.sequence", sequence).Run()
+			_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.sequence", sequence).Run()
 		}
 		if rules != "" {
-			_ = execCommand("nd", "config", "set", "status.exit_rules", rules).Run()
+			_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.exit_rules", rules).Run()
 		}
-		_ = execCommand("nd", "config", "set", "status.fsm", "true").Run()
+		_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.fsm", "true").Run()
 	} else {
-		_ = execCommand("nd", "config", "set", "status.fsm", "false").Run()
+		_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.fsm", "false").Run()
 	}
 }
 

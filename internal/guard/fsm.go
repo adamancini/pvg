@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/paivot-ai/pvg/internal/ndvault"
 	"github.com/paivot-ai/pvg/internal/settings"
 )
 
@@ -202,7 +203,11 @@ func parseNdContractLabelAdd(command string) (issueID string, labels []string, f
 // ReadIssueStatus reads the status from an nd issue's frontmatter.
 // Returns "" on any error (fail-open).
 func ReadIssueStatus(projectRoot, issueID string) string {
-	path := filepath.Join(projectRoot, ".vault", "issues", issueID+".md")
+	vaultDir, err := ndvault.Resolve(projectRoot)
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(vaultDir, "issues", issueID+".md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/paivot-ai/pvg/internal/ndvault"
 )
 
 // WorkCounts holds the counts of issues in each state.
@@ -23,26 +25,28 @@ type ndIssue struct {
 	Type   string   `json:"Type"`
 }
 
-// QueryWorkCounts returns work counts based on mode ("all" or "epic").
-func QueryWorkCounts(mode, targetEpic string) (WorkCounts, error) {
-	if mode == "epic" && targetEpic != "" {
-		return queryEpicCounts(targetEpic)
-	}
-	return queryAllCounts()
+var execCommand = exec.Command
+
+// QueryWorkCounts returns work counts across the live backlog.
+//
+// Even in epic mode, stop decisions stay backlog-wide so the loop can continue
+// past a single epic instead of terminating when that epic empties.
+func QueryWorkCounts(projectRoot, mode, targetEpic string) (WorkCounts, error) {
+	return queryAllCounts(projectRoot)
 }
 
 // queryAllCounts uses nd subcommands to gather counts across the whole backlog.
-func queryAllCounts() (WorkCounts, error) {
+func queryAllCounts(projectRoot string) (WorkCounts, error) {
 	var wc WorkCounts
 
 	// Ready issues
-	readyIssues, err := runND("ready", "--json")
+	readyIssues, err := runND(projectRoot, "ready", "--json")
 	if err == nil {
 		wc.Ready = len(readyIssues)
 	}
 
 	// In-progress issues (includes delivered -- we separate below)
-	ipIssues, err := runND("list", "--status", "in_progress", "--json")
+	ipIssues, err := runND(projectRoot, "list", "--status", "in_progress", "--json")
 	if err == nil {
 		for _, issue := range ipIssues {
 			if hasLabel(issue.Labels, "delivered") {
@@ -54,7 +58,7 @@ func queryAllCounts() (WorkCounts, error) {
 	}
 
 	// Blocked issues
-	blockedIssues, err := runND("blocked", "--json")
+	blockedIssues, err := runND(projectRoot, "blocked", "--json")
 	if err == nil {
 		wc.Blocked = len(blockedIssues)
 	}
@@ -63,10 +67,10 @@ func queryAllCounts() (WorkCounts, error) {
 }
 
 // queryEpicCounts uses nd children to count work within a specific epic.
-func queryEpicCounts(epicID string) (WorkCounts, error) {
+func queryEpicCounts(projectRoot, epicID string) (WorkCounts, error) {
 	var wc WorkCounts
 
-	issues, err := runND("children", epicID, "--json")
+	issues, err := runND(projectRoot, "children", epicID, "--json")
 	if err != nil {
 		return wc, fmt.Errorf("query epic children: %w", err)
 	}
@@ -91,8 +95,8 @@ func queryEpicCounts(epicID string) (WorkCounts, error) {
 }
 
 // ValidateEpic checks that an epic ID exists and is a valid epic.
-func ValidateEpic(epicID string) error {
-	issues, err := runND("show", epicID, "--json")
+func ValidateEpic(projectRoot, epicID string) error {
+	issues, err := runND(projectRoot, "show", epicID, "--json")
 	if err != nil {
 		return fmt.Errorf("epic %s not found: %w", epicID, err)
 	}
@@ -108,11 +112,17 @@ func ValidateEpic(epicID string) error {
 
 // runND executes an nd command and parses JSON output.
 // Returns empty slice (not error) when nd outputs nothing.
-func runND(args ...string) ([]ndIssue, error) {
-	cmd := exec.Command("nd", args...)
+func runND(projectRoot string, args ...string) ([]ndIssue, error) {
+	vaultDir, err := ndvault.Resolve(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve nd vault: %w", err)
+	}
+
+	ndArgs := append([]string{"--vault", vaultDir}, args...)
+	cmd := execCommand("nd", ndArgs...)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("nd %s: %w", strings.Join(args, " "), err)
+		return nil, fmt.Errorf("nd %s: %w", strings.Join(ndArgs, " "), err)
 	}
 
 	trimmed := strings.TrimSpace(string(out))
@@ -138,8 +148,8 @@ func runND(args ...string) ([]ndIssue, error) {
 }
 
 // QueryInProgress returns all in-progress issues from nd.
-func QueryInProgress() ([]ndIssue, error) {
-	return runND("list", "--status", "in_progress", "--json")
+func QueryInProgress(projectRoot string) ([]ndIssue, error) {
+	return runND(projectRoot, "list", "--status", "in_progress", "--json")
 }
 
 // hasLabel checks if a label exists in a slice (case-insensitive).

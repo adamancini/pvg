@@ -23,13 +23,13 @@ func TestParseWorkflowConfig_Disabled(t *testing.T) {
 func TestParseWorkflowConfig_Enabled(t *testing.T) {
 	wc := ParseWorkflowConfig(map[string]string{
 		"workflow.fsm":      "true",
-		"workflow.sequence": "open,in_progress,delivered,review,closed",
+		"workflow.sequence": "open,in_progress,closed",
 	})
 	if !wc.Enabled {
 		t.Error("expected enabled")
 	}
-	if len(wc.Sequence) != 5 {
-		t.Errorf("expected 5 statuses, got %d", len(wc.Sequence))
+	if len(wc.Sequence) != 3 {
+		t.Errorf("expected 3 statuses, got %d", len(wc.Sequence))
 	}
 }
 
@@ -54,10 +54,10 @@ func TestParseWorkflowConfig_DefaultSequenceFallback(t *testing.T) {
 		"workflow.fsm":      "true",
 		"workflow.sequence": "",
 	})
-	if len(wc.Sequence) != 5 {
-		t.Errorf("expected default sequence length 5, got %d", len(wc.Sequence))
+	if len(wc.Sequence) != 3 {
+		t.Errorf("expected default sequence length 3, got %d", len(wc.Sequence))
 	}
-	if wc.Sequence[0] != "open" || wc.Sequence[4] != "closed" {
+	if wc.Sequence[0] != "open" || wc.Sequence[2] != "closed" {
 		t.Errorf("expected default open..closed sequence, got %v", wc.Sequence)
 	}
 }
@@ -78,8 +78,8 @@ func TestParseWorkflowConfig_MalformedExitRules(t *testing.T) {
 func defaultWC() WorkflowConfig {
 	return ParseWorkflowConfig(map[string]string{
 		"workflow.fsm":        "true",
-		"workflow.sequence":   "open,in_progress,delivered,review,closed",
-		"workflow.exit_rules": "blocked:open,in_progress;rejected:in_progress",
+		"workflow.sequence":   "open,in_progress,closed",
+		"workflow.exit_rules": "blocked:open,in_progress;deferred:open,in_progress",
 	})
 }
 
@@ -89,9 +89,7 @@ func TestValidateTransition_ForwardOneStep(t *testing.T) {
 		from, to string
 	}{
 		{"open", "in_progress"},
-		{"in_progress", "delivered"},
-		{"delivered", "review"},
-		{"review", "closed"},
+		{"in_progress", "closed"},
 	}
 	for _, tt := range tests {
 		r := ValidateTransition(wc, "TEST-a1b2", tt.from, tt.to)
@@ -106,11 +104,7 @@ func TestValidateTransition_ForwardSkipBlocked(t *testing.T) {
 	tests := []struct {
 		from, to string
 	}{
-		{"open", "delivered"},
 		{"open", "closed"},
-		{"in_progress", "review"},
-		{"in_progress", "closed"},
-		{"delivered", "closed"},
 	}
 	for _, tt := range tests {
 		r := ValidateTransition(wc, "TEST-a1b2", tt.from, tt.to)
@@ -125,11 +119,7 @@ func TestValidateTransition_BackwardAny(t *testing.T) {
 	tests := []struct {
 		from, to string
 	}{
-		{"closed", "review"},
 		{"closed", "open"},
-		{"review", "delivered"},
-		{"review", "open"},
-		{"delivered", "open"},
 		{"in_progress", "open"},
 	}
 	for _, tt := range tests {
@@ -166,15 +156,15 @@ func TestValidateTransition_ExitRules(t *testing.T) {
 	if r.Allowed {
 		t.Error("blocked -> closed: expected blocked by exit rule, got allowed")
 	}
-	// rejected -> in_progress: allowed by exit rule
-	r = ValidateTransition(wc, "TEST-a1b2", "rejected", "in_progress")
+	// deferred -> in_progress: allowed by exit rule
+	r = ValidateTransition(wc, "TEST-a1b2", "deferred", "in_progress")
 	if !r.Allowed {
-		t.Errorf("rejected -> in_progress: expected allowed by exit rule, got blocked: %s", r.Reason)
+		t.Errorf("deferred -> in_progress: expected allowed by exit rule, got blocked: %s", r.Reason)
 	}
-	// rejected -> closed: NOT in exit rule
-	r = ValidateTransition(wc, "TEST-a1b2", "rejected", "closed")
+	// deferred -> closed: NOT in exit rule
+	r = ValidateTransition(wc, "TEST-a1b2", "deferred", "closed")
 	if r.Allowed {
-		t.Error("rejected -> closed: expected blocked by exit rule, got allowed")
+		t.Error("deferred -> closed: expected blocked by exit rule, got allowed")
 	}
 }
 
@@ -347,10 +337,14 @@ func TestReadIssueStatus_NoStatusField(t *testing.T) {
 func setupFSMProject(t *testing.T, fsmEnabled bool, issueID, issueStatus string) string {
 	t.Helper()
 	dir := t.TempDir()
+	sharedVault := filepath.Join(dir, ".git", "paivot", "nd-vault")
 
 	// Create settings
 	settingsDir := filepath.Join(dir, ".vault", "knowledge")
 	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	enabled := "false"
@@ -358,7 +352,7 @@ func setupFSMProject(t *testing.T, fsmEnabled bool, issueID, issueStatus string)
 		enabled = "true"
 	}
 	settingsContent := fmt.Sprintf(
-		"workflow.fsm: %s\nworkflow.sequence: open,in_progress,delivered,review,closed\nworkflow.exit_rules: blocked:open,in_progress;rejected:in_progress\n",
+		"workflow.fsm: %s\nworkflow.sequence: open,in_progress,closed\nworkflow.exit_rules: blocked:open,in_progress;deferred:open,in_progress\n",
 		enabled)
 	if err := os.WriteFile(filepath.Join(settingsDir, ".settings.yaml"), []byte(settingsContent), 0644); err != nil {
 		t.Fatal(err)
@@ -366,7 +360,10 @@ func setupFSMProject(t *testing.T, fsmEnabled bool, issueID, issueStatus string)
 
 	// Create issue if provided
 	if issueID != "" && issueStatus != "" {
-		issuesDir := filepath.Join(dir, ".vault", "issues")
+		if err := os.MkdirAll(sharedVault, 0755); err != nil {
+			t.Fatal(err)
+		}
+		issuesDir := filepath.Join(sharedVault, "issues")
 		if err := os.MkdirAll(issuesDir, 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -431,18 +428,18 @@ func TestCheckFSM_NonNdCommand(t *testing.T) {
 }
 
 func TestCheckFSM_CloseBlocked(t *testing.T) {
-	dir := setupFSMProject(t, true, "PROJ-a1b2", "in_progress")
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "open")
 	r := CheckFSM(dir, "nd close PROJ-a1b2")
 	if r.Allowed {
-		t.Error("expected blocked for in_progress -> closed via nd close, got allowed")
+		t.Error("expected blocked for open -> closed via nd close, got allowed")
 	}
 }
 
-func TestCheckFSM_CloseAllowedFromReview(t *testing.T) {
-	dir := setupFSMProject(t, true, "PROJ-a1b2", "review")
+func TestCheckFSM_CloseAllowedFromInProgress(t *testing.T) {
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "in_progress")
 	r := CheckFSM(dir, "nd close PROJ-a1b2")
 	if !r.Allowed {
-		t.Errorf("expected allowed for review -> closed, got blocked: %s", r.Reason)
+		t.Errorf("expected allowed for in_progress -> closed, got blocked: %s", r.Reason)
 	}
 }
 
@@ -454,7 +451,7 @@ func TestCheckFSM_EmptyProjectRoot(t *testing.T) {
 }
 
 func TestCheckFSM_BackwardAllowed(t *testing.T) {
-	dir := setupFSMProject(t, true, "PROJ-a1b2", "delivered")
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "in_progress")
 	r := CheckFSM(dir, "nd update PROJ-a1b2 --status=open")
 	if !r.Allowed {
 		t.Errorf("expected allowed for backward transition, got blocked: %s", r.Reason)
@@ -474,5 +471,49 @@ func TestCheckFSM_AllowsDeliveredLabelFromInProgress(t *testing.T) {
 	r := CheckFSM(dir, "nd update PROJ-a1b2 --add-label delivered")
 	if !r.Allowed {
 		t.Errorf("expected delivered label allowed from in_progress, got blocked: %s", r.Reason)
+	}
+}
+
+func TestCheckFSM_BlocksAcceptedLabelBeforeClose(t *testing.T) {
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "in_progress")
+	r := CheckFSM(dir, "nd labels add PROJ-a1b2 accepted")
+	if r.Allowed {
+		t.Error("expected accepted label blocked while issue is still in_progress")
+	}
+}
+
+func TestCheckFSM_UsesSharedVaultOverLocalBranchState(t *testing.T) {
+	dir := t.TempDir()
+	settingsDir := filepath.Join(dir, ".vault", "knowledge")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(settingsDir, ".settings.yaml"), []byte("workflow.fsm: true\nworkflow.sequence: open,in_progress,closed\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	localIssuesDir := filepath.Join(dir, ".vault", "issues")
+	if err := os.MkdirAll(localIssuesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localIssuesDir, "PROJ-a1b2.md"), []byte("---\nstatus: open\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	override := filepath.Join(t.TempDir(), "shared-vault")
+	if err := os.MkdirAll(filepath.Join(override, "issues"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(override, "issues", "PROJ-a1b2.md"), []byte("---\nstatus: in_progress\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("ND_VAULT_DIR", override); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	r := CheckFSM(dir, "nd close PROJ-a1b2")
+	if !r.Allowed {
+		t.Fatalf("expected shared vault in_progress status to allow close, got blocked: %s", r.Reason)
 	}
 }

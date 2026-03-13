@@ -9,6 +9,7 @@ import (
 
 	"github.com/paivot-ai/pvg/internal/dispatcher"
 	"github.com/paivot-ai/pvg/internal/loop"
+	"github.com/paivot-ai/pvg/internal/ndvault"
 )
 
 // storyMergeRe matches: git merge [flags] origin/story/STORY_ID or story/STORY_ID
@@ -18,7 +19,7 @@ var storyMergeRe = regexp.MustCompile(`git\s+merge\s+[^;|&]*?(?:origin/)?story/(
 const mergeGateBlockMsg = "BLOCKED: Cannot merge story branch before PM-Acceptor completion.\n\n" +
 	"Story %s must be both labeled 'accepted' and closed in nd before merge.\n" +
 	"The merge gate requires PM-Acceptor to fully finish review first.\n\n" +
-	"Workflow: Developer marks delivered -> PM-Acceptor reviews -> PM-Acceptor adds 'accepted' label -> PM-Acceptor closes story -> Dispatcher merges.\n\n" +
+	"Workflow: Developer marks delivered -> PM-Acceptor reviews -> PM-Acceptor closes story -> PM-Acceptor adds 'accepted' label -> Dispatcher merges.\n\n" +
 	"To proceed:\n" +
 	"  1. Ensure the story has the 'delivered' label\n" +
 	"  2. Spawn paivot-graph:pm agent to review the story\n" +
@@ -109,7 +110,10 @@ func mergeGateEnabled(projectRoot string) bool {
 // ReadIssueLabels reads labels from an nd issue's frontmatter.
 // Returns nil on any error (fail-open). Returns empty slice if no labels.
 func ReadIssueLabels(projectRoot, issueID string) []string {
-	path := filepath.Join(projectRoot, ".vault", "issues", issueID+".md")
+	path, err := issuePath(projectRoot, issueID)
+	if err != nil {
+		return nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
@@ -134,6 +138,14 @@ func ReadIssueLabels(projectRoot, issueID string) []string {
 		return parseYAMLArray(value)
 	}
 	return []string{}
+}
+
+func issuePath(projectRoot, issueID string) (string, error) {
+	vaultDir, err := ndvault.Resolve(projectRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(vaultDir, "issues", issueID+".md"), nil
 }
 
 // parseYAMLArray parses a YAML inline array like [a, b, c] into a string slice.

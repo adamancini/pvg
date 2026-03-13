@@ -41,12 +41,6 @@ func Seed(force bool, pluginDir string) error {
 		defer unlock()
 	}
 
-	// Resolve agent source
-	agentSrc, err := resolveAgentSrc()
-	if err != nil {
-		return err
-	}
-
 	// Resolve plugin dir if not provided
 	if pluginDir == "" {
 		exe, eerr := os.Executable()
@@ -58,6 +52,12 @@ func Seed(force bool, pluginDir string) error {
 	// If pluginDir still empty, try CLAUDE_PLUGIN_ROOT
 	if pluginDir == "" {
 		pluginDir = os.Getenv("CLAUDE_PLUGIN_ROOT")
+	}
+
+	// Resolve agent source
+	agentSrc, err := resolveAgentSrc(pluginDir)
+	if err != nil {
+		return err
 	}
 
 	counters := &Counters{}
@@ -113,10 +113,17 @@ func Seed(force bool, pluginDir string) error {
 	return nil
 }
 
-func resolveAgentSrc() (string, error) {
+func resolveAgentSrc(pluginDir string) (string, error) {
 	src := os.Getenv("AGENT_SRC")
 	if src != "" {
 		return src, nil
+	}
+
+	if pluginDir != "" {
+		localAgents := filepath.Join(pluginDir, "agents")
+		if info, err := os.Stat(localAgents); err == nil && info.IsDir() {
+			return localAgents, nil
+		}
 	}
 
 	home, err := os.UserHomeDir()

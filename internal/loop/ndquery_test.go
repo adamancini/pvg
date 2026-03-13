@@ -2,6 +2,10 @@ package loop
 
 import (
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -92,5 +96,59 @@ func TestNDIssue_JSONParsing_EmptyLabels(t *testing.T) {
 	}
 	if hasLabel(issue.Labels, "delivered") {
 		t.Error("hasLabel should return false for nil labels")
+	}
+}
+
+func TestRunND_UsesResolvedVault(t *testing.T) {
+	var calls [][]string
+	oldExec := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		calls = append(calls, append([]string{name}, args...))
+		return exec.Command("true")
+	}
+	defer func() { execCommand = oldExec }()
+
+	override := filepath.Join(t.TempDir(), "shared-vault")
+	if err := os.Setenv("ND_VAULT_DIR", override); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	if _, err := runND(t.TempDir(), "ready", "--json"); err != nil {
+		t.Fatalf("runND() error: %v", err)
+	}
+
+	want := []string{"nd", "--vault", override, "ready", "--json"}
+	if len(calls) != 1 || !reflect.DeepEqual(calls[0], want) {
+		t.Fatalf("unexpected nd call: got %#v want %#v", calls, want)
+	}
+}
+
+func TestQueryWorkCounts_EpicModeStillQueriesWholeBacklog(t *testing.T) {
+	var calls [][]string
+	oldExec := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		calls = append(calls, append([]string{name}, args...))
+		return exec.Command("true")
+	}
+	defer func() { execCommand = oldExec }()
+
+	override := filepath.Join(t.TempDir(), "shared-vault")
+	if err := os.Setenv("ND_VAULT_DIR", override); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	if _, err := QueryWorkCounts(t.TempDir(), "epic", "PROJ-epic"); err != nil {
+		t.Fatalf("QueryWorkCounts() error: %v", err)
+	}
+
+	want := [][]string{
+		{"nd", "--vault", override, "ready", "--json"},
+		{"nd", "--vault", override, "list", "--status", "in_progress", "--json"},
+		{"nd", "--vault", override, "blocked", "--json"},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("unexpected nd calls:\n got: %#v\nwant: %#v", calls, want)
 	}
 }

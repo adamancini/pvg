@@ -50,8 +50,8 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 		}
 	}
 
-	actionable := cfg.Ready
-	total := actionable + cfg.InProgress + cfg.Blocked + cfg.Delivered
+	actionable := cfg.Ready + cfg.Delivered
+	total := cfg.Ready + cfg.Delivered + cfg.InProgress + cfg.Blocked
 
 	// All dev work complete (total==0)
 	if total == 0 {
@@ -63,11 +63,11 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 		}
 	}
 
-	// No dev work remaining (only delivered/blocked items)
+	// No actionable work remaining (only blocked items)
 	if actionable == 0 && cfg.InProgress == 0 {
 		return StopDecision{
 			Allow:        true,
-			Reason:       "No actionable development work remains",
+			Reason:       "No actionable work remains",
 			RemoveState:  true,
 			NewIteration: nextIter,
 		}
@@ -93,7 +93,9 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 
 	// Determine reason based on what's pending
 	reason := "Actionable work remains"
-	if actionable == 0 && cfg.InProgress > 0 {
+	if cfg.Delivered > 0 && cfg.Ready == 0 && cfg.InProgress == 0 {
+		reason = "Delivered stories await PM review"
+	} else if cfg.Ready == 0 && cfg.InProgress > 0 {
 		reason = "Waiting for in-progress work to complete"
 	}
 

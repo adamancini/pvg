@@ -95,8 +95,11 @@ func TestBuildContinuationPrompt_EpicScope(t *testing.T) {
 
 	prompt := BuildContinuationPrompt(state, decision, "10", wc)
 
-	if !strings.Contains(prompt, "epic PROJ-a1b") {
+	if !strings.Contains(prompt, "Priority epic: PROJ-a1b") {
 		t.Error("expected epic scope in prompt")
+	}
+	if strings.Contains(prompt, "epic PROJ-a1b only") {
+		t.Error("epic prompt should not terminate the loop at epic boundaries")
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 
 func setupMergeGate(t *testing.T, storyID, issueContent string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, sharedVault := setupPaivotWorktree(t)
 
 	// Enable dispatcher mode
 	knowledgeDir := filepath.Join(dir, ".vault", "knowledge")
@@ -24,7 +24,7 @@ func setupMergeGate(t *testing.T, storyID, issueContent string) string {
 
 	// Create issue file if content provided
 	if storyID != "" && issueContent != "" {
-		issuesDir := filepath.Join(dir, ".vault", "issues")
+		issuesDir := filepath.Join(sharedVault, "issues")
 		if err := os.MkdirAll(issuesDir, 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -45,6 +45,35 @@ func writeProjectSettings(t *testing.T, dir string) {
 	if err := os.WriteFile(path, []byte("stack_detection: false\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func setupPaivotWorktree(t *testing.T) (projectRoot, sharedVault string) {
+	t.Helper()
+
+	base := t.TempDir()
+	projectRoot = filepath.Join(base, "repo")
+	gitDir := filepath.Join(base, "gitdir", "worktrees", "story")
+	commonDir := filepath.Join(base, "gitdir")
+	sharedVault = filepath.Join(commonDir, "paivot", "nd-vault")
+
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".vault", "knowledge"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sharedVault, 0755); err != nil {
+		t.Fatal(err)
+	}
+	gitPtr := "gitdir: " + filepath.ToSlash(gitDir) + "\n"
+	if err := os.WriteFile(filepath.Join(projectRoot, ".git"), []byte(gitPtr), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("../..\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	return projectRoot, sharedVault
 }
 
 func TestCheckMergeGate_BlocksWithoutAcceptedLabel(t *testing.T) {
@@ -100,10 +129,10 @@ func TestCheckMergeGate_AllowsWhenDispatcherOff(t *testing.T) {
 }
 
 func TestCheckMergeGate_EnforcedWithProjectSettings(t *testing.T) {
-	dir := t.TempDir()
+	dir, sharedVault := setupPaivotWorktree(t)
 	writeProjectSettings(t, dir)
 
-	issuesDir := filepath.Join(dir, ".vault", "issues")
+	issuesDir := filepath.Join(sharedVault, "issues")
 	if err := os.MkdirAll(issuesDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -119,9 +148,9 @@ func TestCheckMergeGate_EnforcedWithProjectSettings(t *testing.T) {
 }
 
 func TestCheckMergeGate_EnforcedWithActiveLoop(t *testing.T) {
-	dir := t.TempDir()
+	dir, sharedVault := setupPaivotWorktree(t)
 
-	issuesDir := filepath.Join(dir, ".vault", "issues")
+	issuesDir := filepath.Join(sharedVault, "issues")
 	if err := os.MkdirAll(issuesDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +222,34 @@ func TestCheckMergeGate_EmptyProjectRoot(t *testing.T) {
 	r := CheckMergeGate("", "git merge origin/story/PROJ-a1b2")
 	if !r.Allowed {
 		t.Error("expected allowed for empty project root")
+	}
+}
+
+func TestCheckMergeGate_UsesSharedVaultOverLocalBranchState(t *testing.T) {
+	dir, sharedVault := setupPaivotWorktree(t)
+	writeProjectSettings(t, dir)
+
+	localIssuesDir := filepath.Join(dir, ".vault", "issues")
+	if err := os.MkdirAll(localIssuesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	staleLocal := "---\ntitle: Local\nstatus: in_progress\nlabels: [delivered]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(localIssuesDir, "PROJ-a1b2.md"), []byte(staleLocal), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sharedIssuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(sharedIssuesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	authoritative := "---\ntitle: Shared\nstatus: closed\nlabels: [delivered, accepted]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(sharedIssuesDir, "PROJ-a1b2.md"), []byte(authoritative), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(dir, "git merge origin/story/PROJ-a1b2")
+	if !r.Allowed {
+		t.Fatalf("expected shared vault state to allow merge, got blocked: %s", r.Reason)
 	}
 }
 

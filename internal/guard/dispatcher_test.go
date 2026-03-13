@@ -112,6 +112,23 @@ func TestCheckDispatcher_AllowsBUSINESSmd_WithBLTAgent(t *testing.T) {
 	}
 }
 
+func TestCheckDispatcher_BlocksMismatchedBLTAgent(t *testing.T) {
+	dir := setupDispatcher(t)
+
+	if err := dispatcher.TrackAgent(dir, "agent-1", "paivot-graph:designer"); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Write",
+		ToolInput: ToolInput{FilePath: filepath.Join(dir, "BUSINESS.md")},
+	}
+	result := CheckDispatcher(dir, input)
+	if result.Allowed {
+		t.Error("expected BUSINESS.md write to be blocked for mismatched BLT agent")
+	}
+}
+
 func TestCheckDispatcher_AllowsNonDFFiles(t *testing.T) {
 	dir := setupDispatcher(t)
 	input := HookInput{
@@ -184,6 +201,22 @@ func TestCheckDispatcher_BashAllowsDFWriteWithAgent(t *testing.T) {
 	result := CheckDispatcher(dir, input)
 	if !result.Allowed {
 		t.Errorf("expected allowed with BLT agent, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckDispatcher_BashBlocksDFWriteWithWrongAgent(t *testing.T) {
+	dir := setupDispatcher(t)
+	if err := dispatcher.TrackAgent(dir, "agent-1", "paivot-graph:business-analyst"); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `cat content.txt > ARCHITECTURE.md`},
+	}
+	result := CheckDispatcher(dir, input)
+	if result.Allowed {
+		t.Error("expected ARCHITECTURE.md write to be blocked for wrong BLT agent")
 	}
 }
 

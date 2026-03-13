@@ -302,6 +302,14 @@ func TestCollectSessionLinks_FindsLocalNotes(t *testing.T) {
 	}
 }
 
+func TestBuildSessionSearchQuery_UsesBracketFilters(t *testing.T) {
+	got := buildSessionSearchQuery("my project", "2026-03-12")
+	want := "[project:my project] [created:2026-03-12]"
+	if got != want {
+		t.Fatalf("buildSessionSearchQuery() = %q, want %q", got, want)
+	}
+}
+
 // --- detectStack tests ---
 
 func TestDetectStack_EmptyDir(t *testing.T) {

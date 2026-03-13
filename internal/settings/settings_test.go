@@ -268,18 +268,24 @@ func TestSyncNdConfig_UsesNdConfigSetArgsInOrder(t *testing.T) {
 	}
 	defer func() { execCommand = oldExec }()
 
-	syncNdConfig(map[string]string{
+	projectRoot := t.TempDir()
+	override := filepath.Join(t.TempDir(), "nd-vault")
+	if err := os.Setenv("ND_VAULT_DIR", override); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	syncNdConfig(projectRoot, map[string]string{
 		"workflow.fsm":             "true",
-		"workflow.sequence":        "open,in_progress,delivered,review,closed",
-		"workflow.exit_rules":      "blocked:open,in_progress;rejected:in_progress",
-		"workflow.custom_statuses": "delivered,review,rejected",
+		"workflow.sequence":        "open,in_progress,closed",
+		"workflow.exit_rules":      "blocked:open,in_progress;deferred:open,in_progress",
+		"workflow.custom_statuses": "",
 	})
 
 	want := [][]string{
-		{"nd", "config", "set", "status.custom", "delivered,review,rejected"},
-		{"nd", "config", "set", "status.sequence", "open,in_progress,delivered,review,closed"},
-		{"nd", "config", "set", "status.exit_rules", "blocked:open,in_progress;rejected:in_progress"},
-		{"nd", "config", "set", "status.fsm", "true"},
+		{"nd", "--vault", override, "config", "set", "status.sequence", "open,in_progress,closed"},
+		{"nd", "--vault", override, "config", "set", "status.exit_rules", "blocked:open,in_progress;deferred:open,in_progress"},
+		{"nd", "--vault", override, "config", "set", "status.fsm", "true"},
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("unexpected nd config calls:\n got: %#v\nwant: %#v", calls, want)
@@ -296,15 +302,21 @@ func TestSyncNdConfig_FallsBackToDefaults(t *testing.T) {
 	}
 	defer func() { execCommand = oldExec }()
 
-	syncNdConfig(map[string]string{
+	projectRoot := t.TempDir()
+	override := filepath.Join(t.TempDir(), "nd-vault")
+	if err := os.Setenv("ND_VAULT_DIR", override); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	syncNdConfig(projectRoot, map[string]string{
 		"workflow.fsm": "true",
 	})
 
 	want := [][]string{
-		{"nd", "config", "set", "status.custom", defaults["workflow.custom_statuses"]},
-		{"nd", "config", "set", "status.sequence", defaults["workflow.sequence"]},
-		{"nd", "config", "set", "status.exit_rules", defaults["workflow.exit_rules"]},
-		{"nd", "config", "set", "status.fsm", "true"},
+		{"nd", "--vault", override, "config", "set", "status.sequence", defaults["workflow.sequence"]},
+		{"nd", "--vault", override, "config", "set", "status.exit_rules", defaults["workflow.exit_rules"]},
+		{"nd", "--vault", override, "config", "set", "status.fsm", "true"},
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("unexpected nd config calls:\n got: %#v\nwant: %#v", calls, want)

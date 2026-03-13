@@ -73,7 +73,7 @@ func TestEvaluateStop_AllBlocked(t *testing.T) {
 	if !d.RemoveState {
 		t.Error("expected remove state when all blocked")
 	}
-	if d.Reason != "No actionable development work remains" {
+	if d.Reason != "No actionable work remains" {
 		t.Errorf("unexpected reason: %s", d.Reason)
 	}
 }
@@ -99,36 +99,35 @@ func TestEvaluateStop_ActionableReady(t *testing.T) {
 
 func TestEvaluateStop_ActionableDelivered(t *testing.T) {
 	d := EvaluateStop(StopConfig{
-		Active:        true,
-		Iteration:     2,
-		MaxIterations: 50,
-		Delivered:     2,
+		Active:         true,
+		Iteration:      2,
+		MaxIterations:  50,
+		MaxConsecWaits: 3,
+		Delivered:      2,
 	})
-	if !d.Allow {
-		t.Error("expected allow with only delivered work (no actionable dev work)")
+	if d.Allow {
+		t.Error("expected block with delivered work pending PM review")
 	}
-	if !d.RemoveState {
-		t.Error("expected remove state with only delivered work")
+	if d.Reason != "Delivered stories await PM review" {
+		t.Errorf("unexpected reason: %s", d.Reason)
 	}
 }
 
 func TestEvaluateStop_DeliveredOnly(t *testing.T) {
 	d := EvaluateStop(StopConfig{
-		Active:        true,
-		Iteration:     2,
-		MaxIterations: 50,
-		Ready:         0,
-		InProgress:    0,
-		Delivered:     2,
-		Blocked:       0,
+		Active:         true,
+		Iteration:      2,
+		MaxIterations:  50,
+		MaxConsecWaits: 3,
+		Ready:          0,
+		InProgress:     0,
+		Delivered:      2,
+		Blocked:        0,
 	})
-	if !d.Allow {
-		t.Error("expected allow with only delivered work")
+	if d.Allow {
+		t.Error("expected block with only delivered work")
 	}
-	if !d.RemoveState {
-		t.Error("expected remove state with only delivered work")
-	}
-	if d.Reason != "No actionable development work remains" {
+	if d.Reason != "Delivered stories await PM review" {
 		t.Errorf("unexpected reason: %s", d.Reason)
 	}
 }

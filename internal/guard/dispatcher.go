@@ -49,7 +49,7 @@ func checkDFFilePath(state *dispatcher.State, filePath string) Result {
 		return Result{Allowed: true}
 	}
 
-	if dispatcher.HasActiveBLTAgent(state) {
+	if dispatcher.HasActiveAgentType(state, "paivot-graph:"+agentName) {
 		return Result{Allowed: true}
 	}
 
@@ -93,7 +93,7 @@ func checkDFBashCommand(state *dispatcher.State, command string) Result {
 			}
 		}
 
-		if hasWriteOp && !dispatcher.HasActiveBLTAgent(state) {
+		if hasWriteOp && !dispatcher.HasActiveAgentType(state, "paivot-graph:"+agentName) {
 			return Result{
 				Allowed: false,
 				Reason:  dfBlockMsg(artifact, agentName),
@@ -107,6 +107,7 @@ func checkDFBashCommand(state *dispatcher.State, command string) Result {
 func dfBlockMsg(artifact, agentName string) string {
 	return fmt.Sprintf(
 		"BLOCKED: Dispatcher mode is active. D&F artifacts must be produced by BLT agents.\n"+
+			"Only the matching BLT agent may write each artifact.\n"+
 			"Spawn the appropriate agent:\n"+
 			"  - BUSINESS.md --> business-analyst agent\n"+
 			"  - DESIGN.md --> designer agent\n"+

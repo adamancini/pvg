@@ -149,6 +149,23 @@ func TestHasActiveBLTAgent_FalseWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestHasActiveAgentType(t *testing.T) {
+	state := &State{
+		Enabled: true,
+		ActiveAgents: map[string]string{
+			"a1": "paivot-graph:architect",
+			"a2": "paivot-graph:designer",
+		},
+	}
+
+	if !HasActiveAgentType(state, "paivot-graph:architect") {
+		t.Error("expected architect agent to be detected")
+	}
+	if HasActiveAgentType(state, "paivot-graph:business-analyst") {
+		t.Error("did not expect unrelated agent type to be detected")
+	}
+}
+
 func TestStateFileName(t *testing.T) {
 	if StateFileName() != ".dispatcher-state.json" {
 		t.Errorf("unexpected state file name: %s", StateFileName())
