@@ -31,6 +31,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/paivot-ai/pvg/internal/ndvault"
 )
 
 // HookInput matches the JSON structure Claude Code sends to PreToolUse hooks.
@@ -256,6 +258,7 @@ const projectVaultRelPath = ".vault/knowledge/"
 // projectIssuesPath is the relative path segment that identifies project issue files.
 const projectIssuesPath = "/.vault/issues/"
 const projectIssuesRelPath = ".vault/issues/"
+const sharedProjectIssuesRelPath = "paivot/nd-vault/issues/"
 
 func checkProjectVault(projectRoot, filePath string) Result {
 	if filePath == "" || projectRoot == "" {
@@ -346,8 +349,9 @@ func checkProjectIssues(projectRoot, filePath string) Result {
 	normFile := normalizePath(resolvedFile)
 	cleanFile := filepath.Clean(resolvedFile)
 
-	if !hasAnyPrefix(normFile, projectPathPrefixes(projectRoot, ".vault", "issues")) &&
-		!hasAnyPrefix(cleanFile, projectPathPrefixes(projectRoot, ".vault", "issues")) {
+	issuePrefixes := projectIssuePrefixes(projectRoot)
+	if !hasAnyPrefix(normFile, issuePrefixes) &&
+		!hasAnyPrefix(cleanFile, issuePrefixes) {
 		return Result{Allowed: true}
 	}
 
@@ -365,7 +369,7 @@ func checkBashProjectIssues(projectRoot, command string) Result {
 		return Result{Allowed: true}
 	}
 
-	issueSegments := projectPathPrefixes(projectRoot, ".vault", "issues")
+	issueSegments := projectIssueCommandSegments(projectRoot)
 	if !stringsContainAny(command, issueSegments) && !strings.Contains(command, projectIssuesRelPath) {
 		return Result{Allowed: true}
 	}
@@ -405,6 +409,36 @@ func checkBashProjectIssues(projectRoot, command string) Result {
 	return Result{Allowed: true}
 }
 
+func projectIssuePrefixes(projectRoot string) []string {
+	prefixes := projectPathPrefixes(projectRoot, ".vault", "issues")
+
+	vaultDir, err := ndvault.Resolve(projectRoot)
+	if err != nil {
+		return prefixes
+	}
+
+	sharedIssuesDir := filepath.Join(vaultDir, "issues")
+	prefixes = appendUniquePrefix(prefixes, filepath.Clean(sharedIssuesDir)+string(os.PathSeparator))
+	prefixes = appendUniquePrefix(prefixes, normalizePath(sharedIssuesDir)+string(os.PathSeparator))
+	return prefixes
+}
+
+func projectIssueCommandSegments(projectRoot string) []string {
+	segments := projectIssuePrefixes(projectRoot)
+	segments = appendUniquePrefix(segments, sharedProjectIssuesRelPath)
+
+	vaultDir, err := ndvault.Resolve(projectRoot)
+	if err != nil {
+		return segments
+	}
+
+	sharedIssuesDir := filepath.Join(vaultDir, "issues")
+	if rel, relErr := filepath.Rel(filepath.Clean(projectRoot), sharedIssuesDir); relErr == nil && rel != "" && rel != "." {
+		segments = appendUniquePrefix(segments, filepath.Clean(rel)+string(os.PathSeparator))
+	}
+	return segments
+}
+
 func projectPathPrefixes(projectRoot string, relParts ...string) []string {
 	rawPrefix := filepath.Join(filepath.Clean(projectRoot), filepath.Join(relParts...)) + string(os.PathSeparator)
 	normPrefix := filepath.Join(normalizePath(projectRoot), filepath.Join(relParts...)) + string(os.PathSeparator)
@@ -431,4 +465,16 @@ func stringsContainAny(s string, needles []string) bool {
 		}
 	}
 	return false
+}
+
+func appendUniquePrefix(prefixes []string, prefix string) []string {
+	if prefix == "" {
+		return prefixes
+	}
+	for _, existing := range prefixes {
+		if existing == prefix {
+			return prefixes
+		}
+	}
+	return append(prefixes, prefix)
 }

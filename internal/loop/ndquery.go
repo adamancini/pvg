@@ -15,6 +15,7 @@ type WorkCounts struct {
 	Delivered  int
 	InProgress int
 	Blocked    int
+	Other      int
 }
 
 // ndIssue matches the PascalCase JSON output of nd.
@@ -38,16 +39,19 @@ func QueryWorkCounts(projectRoot, mode, targetEpic string) (WorkCounts, error) {
 // queryAllCounts uses nd subcommands to gather counts across the whole backlog.
 func queryAllCounts(projectRoot string) (WorkCounts, error) {
 	var wc WorkCounts
-
-	// Ready issues
+	readyOK := false
+	ipOK := false
+	blockedOK := false
 	readyIssues, err := runND(projectRoot, "ready", "--json")
 	if err == nil {
 		wc.Ready = len(readyIssues)
+		readyOK = true
 	}
 
 	// In-progress issues (includes delivered -- we separate below)
 	ipIssues, err := runND(projectRoot, "list", "--status", "in_progress", "--json")
 	if err == nil {
+		ipOK = true
 		for _, issue := range ipIssues {
 			if hasLabel(issue.Labels, "delivered") {
 				wc.Delivered++
@@ -61,6 +65,12 @@ func queryAllCounts(projectRoot string) (WorkCounts, error) {
 	blockedIssues, err := runND(projectRoot, "blocked", "--json")
 	if err == nil {
 		wc.Blocked = len(blockedIssues)
+		blockedOK = true
+	}
+
+	allIssues, err := runND(projectRoot, "list", "--status", "!closed", "--json")
+	if err == nil && readyOK && ipOK && blockedOK {
+		wc.Other = countOtherIssues(readyIssues, ipIssues, blockedIssues, allIssues)
 	}
 
 	return wc, nil
@@ -87,11 +97,36 @@ func queryEpicCounts(projectRoot, epicID string) (WorkCounts, error) {
 			}
 		case "blocked":
 			wc.Blocked++
-			// closed/done issues are not counted
+		case "closed":
+			// done issues are not counted
+		default:
+			wc.Other++
 		}
 	}
 
 	return wc, nil
+}
+
+func countOtherIssues(readyIssues, ipIssues, blockedIssues, allIssues []ndIssue) int {
+	known := make(map[string]bool, len(readyIssues)+len(ipIssues)+len(blockedIssues))
+	for _, issue := range readyIssues {
+		known[issue.ID] = true
+	}
+	for _, issue := range ipIssues {
+		known[issue.ID] = true
+	}
+	for _, issue := range blockedIssues {
+		known[issue.ID] = true
+	}
+
+	other := 0
+	for _, issue := range allIssues {
+		if issue.ID == "" || known[issue.ID] {
+			continue
+		}
+		other++
+	}
+	return other
 }
 
 // ValidateEpic checks that an epic ID exists and is a valid epic.

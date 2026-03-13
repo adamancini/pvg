@@ -116,6 +116,7 @@ func checkLoop(cwd string) error {
 		Delivered:      wc.Delivered,
 		InProgress:     wc.InProgress,
 		Blocked:        wc.Blocked,
+		Other:          wc.Other,
 	}
 
 	decision := loop.EvaluateStop(cfg)
@@ -186,9 +187,9 @@ func isLoopPersistEnabled(cwd string) bool {
 // there is actionable work the dispatcher can act on.
 func BuildContinuationPrompt(state *loop.State, decision *loop.StopDecision, maxIterStr string, wc *loop.WorkCounts) string {
 	header := fmt.Sprintf(
-		"[LOOP] Iteration %d/%s | Ready: %d, Delivered: %d, In-progress: %d, Blocked: %d | %s\n",
+		"[LOOP] Iteration %d/%s | Ready: %d, Delivered: %d, In-progress: %d, Blocked: %d, Other: %d | %s\n",
 		decision.NewIteration, maxIterStr,
-		wc.Ready, wc.Delivered, wc.InProgress, wc.Blocked,
+		wc.Ready, wc.Delivered, wc.InProgress, wc.Blocked, wc.Other,
 		decision.Reason,
 	)
 

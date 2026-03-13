@@ -15,6 +15,7 @@ type StopConfig struct {
 	Delivered      int
 	InProgress     int
 	Blocked        int
+	Other          int
 }
 
 // StopDecision is the output of EvaluateStop.
@@ -51,7 +52,7 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 	}
 
 	actionable := cfg.Ready + cfg.Delivered
-	total := cfg.Ready + cfg.Delivered + cfg.InProgress + cfg.Blocked
+	total := cfg.Ready + cfg.Delivered + cfg.InProgress + cfg.Blocked + cfg.Other
 
 	// All dev work complete (total==0)
 	if total == 0 {
@@ -65,6 +66,14 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 
 	// No actionable work remaining (only blocked items)
 	if actionable == 0 && cfg.InProgress == 0 {
+		if cfg.Other > 0 {
+			return StopDecision{
+				Allow:        true,
+				Reason:       "Non-dispatcher workflow states remain",
+				RemoveState:  false,
+				NewIteration: nextIter,
+			}
+		}
 		return StopDecision{
 			Allow:        true,
 			Reason:       "No actionable work remains",

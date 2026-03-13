@@ -94,6 +94,29 @@ func TestTrackAgent_AddsToActiveAgents(t *testing.T) {
 	}
 }
 
+func TestTrackAgent_FromWorktreeUpdatesRootState(t *testing.T) {
+	root := t.TempDir()
+	worktree := filepath.Join(root, ".claude", "worktrees", "agent-123")
+	if err := os.MkdirAll(worktree, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := On(root); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := TrackAgent(worktree, "agent-123", "paivot-graph:designer"); err != nil {
+		t.Fatalf("TrackAgent() from worktree error: %v", err)
+	}
+
+	state, err := ReadState(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := state.AgentWorktrees["agent-123"]; got != worktree {
+		t.Fatalf("expected agent worktree %q, got %q", worktree, got)
+	}
+}
+
 func TestTrackAgent_NoopWhenNotEnabled(t *testing.T) {
 	dir := t.TempDir()
 	// No state file -- TrackAgent should be a no-op
@@ -163,6 +186,28 @@ func TestHasActiveAgentType(t *testing.T) {
 	}
 	if HasActiveAgentType(state, "paivot-graph:business-analyst") {
 		t.Error("did not expect unrelated agent type to be detected")
+	}
+}
+
+func TestHasActiveAgentTypeAtPath(t *testing.T) {
+	state := &State{
+		Enabled: true,
+		ActiveAgents: map[string]string{
+			"a1": "paivot-graph:architect",
+		},
+		AgentWorktrees: map[string]string{
+			"a1": "/project/.claude/worktrees/agent-a1",
+		},
+	}
+
+	if !HasActiveAgentTypeAtPath(state, "paivot-graph:architect", "/project/.claude/worktrees/agent-a1") {
+		t.Error("expected exact worktree path match")
+	}
+	if !HasActiveAgentTypeAtPath(state, "paivot-graph:architect", "/project/.claude/worktrees/agent-a1/subdir") {
+		t.Error("expected subdir under worktree to match")
+	}
+	if HasActiveAgentTypeAtPath(state, "paivot-graph:architect", "/project") {
+		t.Error("did not expect orchestrator root to match agent worktree")
 	}
 }
 

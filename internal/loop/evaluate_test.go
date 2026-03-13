@@ -78,6 +78,24 @@ func TestEvaluateStop_AllBlocked(t *testing.T) {
 	}
 }
 
+func TestEvaluateStop_CustomWorkflowStatesRemain(t *testing.T) {
+	d := EvaluateStop(StopConfig{
+		Active:        true,
+		Iteration:     3,
+		MaxIterations: 50,
+		Other:         2,
+	})
+	if !d.Allow {
+		t.Error("expected allow when only non-dispatcher workflow states remain")
+	}
+	if d.RemoveState {
+		t.Error("expected state to be preserved while custom workflow states remain")
+	}
+	if d.Reason != "Non-dispatcher workflow states remain" {
+		t.Errorf("unexpected reason: %s", d.Reason)
+	}
+}
+
 func TestEvaluateStop_ActionableReady(t *testing.T) {
 	d := EvaluateStop(StopConfig{
 		Active:         true,

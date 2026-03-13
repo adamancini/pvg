@@ -147,8 +147,26 @@ func TestQueryWorkCounts_EpicModeStillQueriesWholeBacklog(t *testing.T) {
 		{"nd", "--vault", override, "ready", "--json"},
 		{"nd", "--vault", override, "list", "--status", "in_progress", "--json"},
 		{"nd", "--vault", override, "blocked", "--json"},
+		{"nd", "--vault", override, "list", "--status", "!closed", "--json"},
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("unexpected nd calls:\n got: %#v\nwant: %#v", calls, want)
+	}
+}
+
+func TestCountOtherIssues(t *testing.T) {
+	ready := []ndIssue{{ID: "PROJ-ready"}}
+	inProgress := []ndIssue{{ID: "PROJ-dev"}}
+	blocked := []ndIssue{{ID: "PROJ-blocked"}}
+	all := []ndIssue{
+		{ID: "PROJ-ready", Status: "open"},
+		{ID: "PROJ-dev", Status: "in_progress"},
+		{ID: "PROJ-blocked", Status: "blocked"},
+		{ID: "PROJ-review", Status: "review"},
+		{ID: "PROJ-qa", Status: "qa"},
+	}
+
+	if got := countOtherIssues(ready, inProgress, blocked, all); got != 2 {
+		t.Fatalf("expected 2 other issues, got %d", got)
 	}
 }

@@ -23,22 +23,22 @@ func CheckDispatcher(projectRoot string, input HookInput) Result {
 		return Result{Allowed: true}
 	}
 
-	state, err := dispatcher.ReadState(projectRoot)
+	state, _, err := dispatcher.ReadStateRoot(projectRoot)
 	if err != nil || !state.Enabled {
 		return Result{Allowed: true}
 	}
 
 	switch input.ToolName {
 	case "Edit", "Write":
-		return checkDFFilePath(state, input.ToolInput.FilePath)
+		return checkDFFilePath(projectRoot, state, input.ToolInput.FilePath)
 	case "Bash":
-		return checkDFBashCommand(state, input.ToolInput.Command)
+		return checkDFBashCommand(projectRoot, state, input.ToolInput.Command)
 	default:
 		return Result{Allowed: true}
 	}
 }
 
-func checkDFFilePath(state *dispatcher.State, filePath string) Result {
+func checkDFFilePath(projectRoot string, state *dispatcher.State, filePath string) Result {
 	if filePath == "" {
 		return Result{Allowed: true}
 	}
@@ -49,7 +49,7 @@ func checkDFFilePath(state *dispatcher.State, filePath string) Result {
 		return Result{Allowed: true}
 	}
 
-	if dispatcher.HasActiveAgentType(state, "paivot-graph:"+agentName) {
+	if dfWriteAllowed(projectRoot, state, agentName) {
 		return Result{Allowed: true}
 	}
 
@@ -59,7 +59,7 @@ func checkDFFilePath(state *dispatcher.State, filePath string) Result {
 	}
 }
 
-func checkDFBashCommand(state *dispatcher.State, command string) Result {
+func checkDFBashCommand(projectRoot string, state *dispatcher.State, command string) Result {
 	if command == "" {
 		return Result{Allowed: true}
 	}
@@ -93,7 +93,7 @@ func checkDFBashCommand(state *dispatcher.State, command string) Result {
 			}
 		}
 
-		if hasWriteOp && !dispatcher.HasActiveAgentType(state, "paivot-graph:"+agentName) {
+		if hasWriteOp && !dfWriteAllowed(projectRoot, state, agentName) {
 			return Result{
 				Allowed: false,
 				Reason:  dfBlockMsg(artifact, agentName),
@@ -102,6 +102,13 @@ func checkDFBashCommand(state *dispatcher.State, command string) Result {
 	}
 
 	return Result{Allowed: true}
+}
+
+func dfWriteAllowed(projectRoot string, state *dispatcher.State, agentName string) bool {
+	if projectRoot == "" {
+		return false
+	}
+	return dispatcher.HasActiveAgentTypeAtPath(state, "paivot-graph:"+agentName, projectRoot)
 }
 
 func dfBlockMsg(artifact, agentName string) string {

@@ -26,9 +26,10 @@ const stateFile = ".dispatcher-state.json"
 
 // State represents the current dispatcher mode state.
 type State struct {
-	Enabled      bool              `json:"enabled"`
-	Since        string            `json:"since"`
-	ActiveAgents map[string]string `json:"active_agents"` // agent_id -> agent_type
+	Enabled        bool              `json:"enabled"`
+	Since          string            `json:"since"`
+	ActiveAgents   map[string]string `json:"active_agents"`             // agent_id -> agent_type
+	AgentWorktrees map[string]string `json:"agent_worktrees,omitempty"` // agent_id -> worktree path
 }
 
 // statePath returns the full path to the state file for a project root.
@@ -43,9 +44,10 @@ func On(projectRoot string) error {
 	initProjectVault(projectRoot)
 
 	state := State{
-		Enabled:      true,
-		Since:        time.Now().UTC().Format(time.RFC3339),
-		ActiveAgents: make(map[string]string),
+		Enabled:        true,
+		Since:          time.Now().UTC().Format(time.RFC3339),
+		ActiveAgents:   make(map[string]string),
+		AgentWorktrees: make(map[string]string),
 	}
 	return writeState(projectRoot, state)
 }
@@ -171,7 +173,11 @@ func Status(projectRoot string) {
 // ReadState reads the dispatcher state from disk.
 // Returns an error if the file does not exist or cannot be parsed.
 func ReadState(projectRoot string) (*State, error) {
-	path := statePath(projectRoot)
+	path, _, err := findStateFile(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -181,12 +187,44 @@ func ReadState(projectRoot string) (*State, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("parse dispatcher state: %w", err)
 	}
+	if state.ActiveAgents == nil {
+		state.ActiveAgents = make(map[string]string)
+	}
+	if state.AgentWorktrees == nil {
+		state.AgentWorktrees = make(map[string]string)
+	}
 	return &state, nil
+}
+
+// ReadStateRoot reads dispatcher state and returns the project root that owns it.
+// This lets subagent worktrees discover the orchestrator's shared dispatcher state.
+func ReadStateRoot(projectRoot string) (*State, string, error) {
+	path, root, err := findStateFile(projectRoot)
+	if err != nil {
+		return nil, "", err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, "", fmt.Errorf("parse dispatcher state: %w", err)
+	}
+	if state.ActiveAgents == nil {
+		state.ActiveAgents = make(map[string]string)
+	}
+	if state.AgentWorktrees == nil {
+		state.AgentWorktrees = make(map[string]string)
+	}
+	return &state, root, nil
 }
 
 // TrackAgent adds a BLT agent to the active agents map.
 func TrackAgent(projectRoot, agentID, agentType string) error {
-	state, err := ReadState(projectRoot)
+	state, root, err := ReadStateRoot(projectRoot)
 	if err != nil {
 		// If no state file, dispatcher mode is off -- nothing to track
 		return nil
@@ -198,13 +236,17 @@ func TrackAgent(projectRoot, agentID, agentType string) error {
 	if state.ActiveAgents == nil {
 		state.ActiveAgents = make(map[string]string)
 	}
+	if state.AgentWorktrees == nil {
+		state.AgentWorktrees = make(map[string]string)
+	}
 	state.ActiveAgents[agentID] = agentType
-	return writeState(projectRoot, *state)
+	state.AgentWorktrees[agentID] = filepath.Clean(projectRoot)
+	return writeState(root, *state)
 }
 
 // UntrackAgent removes a BLT agent from the active agents map.
 func UntrackAgent(projectRoot, agentID string) error {
-	state, err := ReadState(projectRoot)
+	state, root, err := ReadStateRoot(projectRoot)
 	if err != nil {
 		return nil
 	}
@@ -213,7 +255,8 @@ func UntrackAgent(projectRoot, agentID string) error {
 	}
 
 	delete(state.ActiveAgents, agentID)
-	return writeState(projectRoot, *state)
+	delete(state.AgentWorktrees, agentID)
+	return writeState(root, *state)
 }
 
 // HasActiveBLTAgent returns true if any BLT agent is currently tracked.
@@ -228,6 +271,29 @@ func HasActiveAgentType(state *State, agentType string) bool {
 	}
 	for _, activeType := range state.ActiveAgents {
 		if activeType == agentType {
+			return true
+		}
+	}
+	return false
+}
+
+// HasActiveAgentTypeAtPath returns true if the given agent type is active and
+// its tracked worktree matches the caller path (or a child directory).
+func HasActiveAgentTypeAtPath(state *State, agentType, cwd string) bool {
+	if state == nil {
+		return false
+	}
+
+	cleanCWD := filepath.Clean(cwd)
+	for id, activeType := range state.ActiveAgents {
+		if activeType != agentType {
+			continue
+		}
+		worktree := filepath.Clean(state.AgentWorktrees[id])
+		if worktree == "." || worktree == "" {
+			continue
+		}
+		if cleanCWD == worktree || strings.HasPrefix(cleanCWD, worktree+string(filepath.Separator)) {
 			return true
 		}
 	}
@@ -253,6 +319,23 @@ func writeState(projectRoot string, state State) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
+}
+
+func findStateFile(start string) (path, root string, err error) {
+	dir := filepath.Clean(start)
+	for {
+		candidate := statePath(dir)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", "", os.ErrNotExist
 }
 
 // containsLine checks if content has a line matching entry (trimmed).

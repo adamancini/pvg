@@ -12,9 +12,8 @@ import (
 	"github.com/paivot-ai/pvg/internal/ndvault"
 )
 
-// storyMergeRe matches: git merge [flags] origin/story/STORY_ID or story/STORY_ID
-// Captures the story ID from the branch name.
-var storyMergeRe = regexp.MustCompile(`git\s+merge\s+[^;|&]*?(?:origin/)?story/(\S+)`)
+var gitIntegrationRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?git\s+(merge|pull|rebase|cherry-pick)\b`)
+var storyRefRe = regexp.MustCompile(`(?:^|[\s"'=])(?:refs/(?:remotes/origin|heads)/|origin/)?story/([A-Za-z0-9._-]+)`)
 
 const mergeGateBlockMsg = "BLOCKED: Cannot merge story branch before PM-Acceptor completion.\n\n" +
 	"Story %s must be both labeled 'accepted' and closed in nd before merge.\n" +
@@ -45,52 +44,65 @@ func CheckMergeGate(projectRoot, command string) Result {
 		return Result{Allowed: true}
 	}
 
-	matches := storyMergeRe.FindStringSubmatch(command)
-	if len(matches) < 2 {
+	storyIDs := parseStoryRefs(command)
+	if len(storyIDs) == 0 {
 		return Result{Allowed: true}
 	}
 
-	storyID := matches[1]
-	// Strip quotes if present
-	storyID = strings.Trim(storyID, `"'`)
-
-	// Remove any trailing flags (e.g., -m "message" part captured by \S+)
-	// The story ID should be alphanumeric with hyphens only
-	if idx := strings.IndexAny(storyID, " \t"); idx >= 0 {
-		storyID = storyID[:idx]
-	}
-
-	labels := ReadIssueLabels(projectRoot, storyID)
-	if labels == nil {
-		// No matching nd issue: likely not a Paivot-managed story branch.
-		return Result{Allowed: true}
-	}
-
-	hasAccepted := false
-	for _, label := range labels {
-		if label == "accepted" {
-			hasAccepted = true
-			break
+	for _, storyID := range storyIDs {
+		labels := ReadIssueLabels(projectRoot, storyID)
+		if labels == nil {
+			// No matching nd issue: likely not a Paivot-managed story branch.
+			continue
 		}
-	}
 
-	if !hasAccepted {
-		return Result{
-			Allowed: false,
-			Reason:  fmt.Sprintf(mergeGateBlockMsg, storyID),
+		hasAccepted := false
+		for _, label := range labels {
+			if label == "accepted" {
+				hasAccepted = true
+				break
+			}
 		}
-	}
 
-	if status := ReadIssueStatus(projectRoot, storyID); status != "closed" {
-		return Result{
-			Allowed: false,
-			Reason:  fmt.Sprintf(mergeGateBlockMsg, storyID),
+		if !hasAccepted {
+			return Result{
+				Allowed: false,
+				Reason:  fmt.Sprintf(mergeGateBlockMsg, storyID),
+			}
+		}
+
+		if status := ReadIssueStatus(projectRoot, storyID); status != "closed" {
+			return Result{
+				Allowed: false,
+				Reason:  fmt.Sprintf(mergeGateBlockMsg, storyID),
+			}
 		}
 	}
 
 	return Result{
 		Allowed: true,
 	}
+}
+
+func parseStoryRefs(command string) []string {
+	if !gitIntegrationRe.MatchString(command) {
+		return nil
+	}
+
+	var storyIDs []string
+	seen := make(map[string]bool)
+	for _, match := range storyRefRe.FindAllStringSubmatch(command, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		storyID := strings.TrimSpace(match[1])
+		if storyID == "" || seen[storyID] {
+			continue
+		}
+		seen[storyID] = true
+		storyIDs = append(storyIDs, storyID)
+	}
+	return storyIDs
 }
 
 func mergeGateEnabled(projectRoot string) bool {

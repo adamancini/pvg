@@ -267,6 +267,20 @@ func TestParseNdContractLabelAdd_LabelsAdd(t *testing.T) {
 	}
 }
 
+func TestParseNdDeferCommand(t *testing.T) {
+	id, found := parseNdDeferCommand("nd defer PROJ-a3f8 --until 2026-03-20")
+	if !found || id != "PROJ-a3f8" {
+		t.Errorf("unexpected: id=%q found=%v", id, found)
+	}
+}
+
+func TestParseNdUndeferCommand(t *testing.T) {
+	id, found := parseNdUndeferCommand("nd undefer PROJ-a3f8")
+	if !found || id != "PROJ-a3f8" {
+		t.Errorf("unexpected: id=%q found=%v", id, found)
+	}
+}
+
 // --- Issue status reading ---
 
 func TestReadIssueStatus_ValidFile(t *testing.T) {
@@ -416,6 +430,38 @@ func TestCheckFSM_FailOpenMissingSettings(t *testing.T) {
 	r := CheckFSM(dir, "nd update PROJ-a1b2 --status=closed")
 	if !r.Allowed {
 		t.Errorf("expected fail-open for missing settings, got blocked: %s", r.Reason)
+	}
+}
+
+func TestCheckFSM_ValidatesDeferTransition(t *testing.T) {
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "blocked")
+	r := CheckFSM(dir, "nd defer PROJ-a1b2")
+	if r.Allowed {
+		t.Fatal("expected blocked -> deferred to be blocked by exit rules")
+	}
+}
+
+func TestCheckFSM_UsesDeferredResumeTarget(t *testing.T) {
+	dir := t.TempDir()
+	settingsDir := filepath.Join(dir, ".vault", "knowledge")
+	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "paivot", "nd-vault", "issues"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	settingsContent := "workflow.fsm: true\nworkflow.sequence: open,in_progress,closed\nworkflow.exit_rules: deferred:in_progress\n"
+	if err := os.WriteFile(filepath.Join(settingsDir, ".settings.yaml"), []byte(settingsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	issueContent := "---\ntitle: Test Issue\nstatus: deferred\n---\nBody"
+	if err := os.WriteFile(filepath.Join(dir, ".git", "paivot", "nd-vault", "issues", "PROJ-a1b2.md"), []byte(issueContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckFSM(dir, "nd undefer PROJ-a1b2")
+	if !r.Allowed {
+		t.Fatalf("expected undefer to resume to in_progress per exit rules, got blocked: %s", r.Reason)
 	}
 }
 

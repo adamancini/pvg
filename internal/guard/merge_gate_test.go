@@ -211,6 +211,26 @@ func TestCheckMergeGate_StoryBranchWithoutOrigin(t *testing.T) {
 	}
 }
 
+func TestCheckMergeGate_RefsRemotesOriginStory(t *testing.T) {
+	issue := "---\ntitle: Test\nstatus: in_progress\nlabels: [delivered]\n---\nBody"
+	dir := setupMergeGate(t, "PROJ-a1b2", issue)
+
+	r := CheckMergeGate(dir, "git merge refs/remotes/origin/story/PROJ-a1b2")
+	if r.Allowed {
+		t.Error("expected blocked for refs/remotes/origin story merge without accepted label")
+	}
+}
+
+func TestCheckMergeGate_CherryPickStoryRef(t *testing.T) {
+	issue := "---\ntitle: Test\nstatus: in_progress\nlabels: [delivered]\n---\nBody"
+	dir := setupMergeGate(t, "PROJ-a1b2", issue)
+
+	r := CheckMergeGate(dir, "git cherry-pick origin/story/PROJ-a1b2")
+	if r.Allowed {
+		t.Error("expected blocked for story cherry-pick without accepted label")
+	}
+}
+
 func TestCheckMergeGate_EmptyCommand(t *testing.T) {
 	r := CheckMergeGate("/some/dir", "")
 	if !r.Allowed {

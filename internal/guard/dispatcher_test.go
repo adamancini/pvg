@@ -8,17 +8,21 @@ import (
 	"github.com/paivot-ai/pvg/internal/dispatcher"
 )
 
-func setupDispatcher(t *testing.T) string {
+func setupDispatcher(t *testing.T) (string, string) {
 	t.Helper()
-	dir := t.TempDir()
-	knowledgeDir := filepath.Join(dir, ".vault", "knowledge")
+	root := t.TempDir()
+	knowledgeDir := filepath.Join(root, ".vault", "knowledge")
 	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := dispatcher.On(dir); err != nil {
+	worktree := filepath.Join(root, ".claude", "worktrees", "agent-1")
+	if err := os.MkdirAll(worktree, 0755); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	if err := dispatcher.On(root); err != nil {
+		t.Fatal(err)
+	}
+	return root, worktree
 }
 
 func TestCheckDispatcher_AllowsWhenNoStateFile(t *testing.T) {
@@ -59,7 +63,7 @@ func TestCheckDispatcher_AllowsWhenDisabled(t *testing.T) {
 }
 
 func TestCheckDispatcher_BlocksBUSINESSmd_NoBLTAgent(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Write",
 		ToolInput: ToolInput{FilePath: filepath.Join(dir, "BUSINESS.md")},
@@ -71,7 +75,7 @@ func TestCheckDispatcher_BlocksBUSINESSmd_NoBLTAgent(t *testing.T) {
 }
 
 func TestCheckDispatcher_BlocksDESIGNmd_NoBLTAgent(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Edit",
 		ToolInput: ToolInput{FilePath: "/some/path/DESIGN.md"},
@@ -83,7 +87,7 @@ func TestCheckDispatcher_BlocksDESIGNmd_NoBLTAgent(t *testing.T) {
 }
 
 func TestCheckDispatcher_BlocksARCHITECTUREmd_NoBLTAgent(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Write",
 		ToolInput: ToolInput{FilePath: "/project/ARCHITECTURE.md"},
@@ -94,43 +98,68 @@ func TestCheckDispatcher_BlocksARCHITECTUREmd_NoBLTAgent(t *testing.T) {
 	}
 }
 
-func TestCheckDispatcher_AllowsBUSINESSmd_WithBLTAgent(t *testing.T) {
-	dir := setupDispatcher(t)
+func TestCheckDispatcher_BlocksBUSINESSmd_FromOrchestratorRootEvenWithBLTAgent(t *testing.T) {
+	root, worktree := setupDispatcher(t)
 
 	// Track a BLT agent
-	if err := dispatcher.TrackAgent(dir, "agent-1", "paivot-graph:business-analyst"); err != nil {
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:business-analyst"); err != nil {
 		t.Fatal(err)
 	}
 
 	input := HookInput{
 		ToolName:  "Write",
-		ToolInput: ToolInput{FilePath: filepath.Join(dir, "BUSINESS.md")},
+		ToolInput: ToolInput{FilePath: filepath.Join(root, "BUSINESS.md")},
 	}
-	result := CheckDispatcher(dir, input)
+	result := CheckDispatcher(root, input)
+	if result.Allowed {
+		t.Error("expected orchestrator root write to stay blocked even with active BLT agent")
+	}
+}
+
+func TestCheckDispatcher_AllowsBUSINESSmd_FromMatchingWorktree(t *testing.T) {
+	root, worktree := setupDispatcher(t)
+
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:business-analyst"); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Write",
+		ToolInput: ToolInput{FilePath: filepath.Join(worktree, "BUSINESS.md")},
+	}
+	result := CheckDispatcher(worktree, input)
 	if !result.Allowed {
-		t.Errorf("expected allowed with BLT agent active, got blocked: %s", result.Reason)
+		t.Errorf("expected matching BLT worktree write allowed, got blocked: %s", result.Reason)
+	}
+
+	state, err := dispatcher.ReadState(root)
+	if err != nil {
+		t.Fatalf("read dispatcher state: %v", err)
+	}
+	if !dispatcher.HasActiveAgentTypeAtPath(state, "paivot-graph:business-analyst", worktree) {
+		t.Fatal("expected tracked worktree to be recognized for active BA")
 	}
 }
 
 func TestCheckDispatcher_BlocksMismatchedBLTAgent(t *testing.T) {
-	dir := setupDispatcher(t)
+	_, worktree := setupDispatcher(t)
 
-	if err := dispatcher.TrackAgent(dir, "agent-1", "paivot-graph:designer"); err != nil {
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:designer"); err != nil {
 		t.Fatal(err)
 	}
 
 	input := HookInput{
 		ToolName:  "Write",
-		ToolInput: ToolInput{FilePath: filepath.Join(dir, "BUSINESS.md")},
+		ToolInput: ToolInput{FilePath: filepath.Join(worktree, "BUSINESS.md")},
 	}
-	result := CheckDispatcher(dir, input)
+	result := CheckDispatcher(worktree, input)
 	if result.Allowed {
 		t.Error("expected BUSINESS.md write to be blocked for mismatched BLT agent")
 	}
 }
 
 func TestCheckDispatcher_AllowsNonDFFiles(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Write",
 		ToolInput: ToolInput{FilePath: filepath.Join(dir, "main.go")},
@@ -153,7 +182,7 @@ func TestCheckDispatcher_AllowsEmptyProjectRoot(t *testing.T) {
 }
 
 func TestCheckDispatcher_BashBlocksRedirectToDFFile(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Bash",
 		ToolInput: ToolInput{Command: `cat content.txt > BUSINESS.md`},
@@ -165,7 +194,7 @@ func TestCheckDispatcher_BashBlocksRedirectToDFFile(t *testing.T) {
 }
 
 func TestCheckDispatcher_BashAllowsReadFromDFFile(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Bash",
 		ToolInput: ToolInput{Command: `cat BUSINESS.md`},
@@ -177,7 +206,7 @@ func TestCheckDispatcher_BashAllowsReadFromDFFile(t *testing.T) {
 }
 
 func TestCheckDispatcher_BashBlocksCpToDFFile(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Bash",
 		ToolInput: ToolInput{Command: `cp /tmp/draft.md DESIGN.md`},
@@ -189,8 +218,8 @@ func TestCheckDispatcher_BashBlocksCpToDFFile(t *testing.T) {
 }
 
 func TestCheckDispatcher_BashAllowsDFWriteWithAgent(t *testing.T) {
-	dir := setupDispatcher(t)
-	if err := dispatcher.TrackAgent(dir, "agent-1", "paivot-graph:architect"); err != nil {
+	_, worktree := setupDispatcher(t)
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:architect"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -198,15 +227,15 @@ func TestCheckDispatcher_BashAllowsDFWriteWithAgent(t *testing.T) {
 		ToolName:  "Bash",
 		ToolInput: ToolInput{Command: `cat content.txt > ARCHITECTURE.md`},
 	}
-	result := CheckDispatcher(dir, input)
+	result := CheckDispatcher(worktree, input)
 	if !result.Allowed {
 		t.Errorf("expected allowed with BLT agent, got blocked: %s", result.Reason)
 	}
 }
 
 func TestCheckDispatcher_BashBlocksDFWriteWithWrongAgent(t *testing.T) {
-	dir := setupDispatcher(t)
-	if err := dispatcher.TrackAgent(dir, "agent-1", "paivot-graph:business-analyst"); err != nil {
+	_, worktree := setupDispatcher(t)
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:business-analyst"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -214,14 +243,14 @@ func TestCheckDispatcher_BashBlocksDFWriteWithWrongAgent(t *testing.T) {
 		ToolName:  "Bash",
 		ToolInput: ToolInput{Command: `cat content.txt > ARCHITECTURE.md`},
 	}
-	result := CheckDispatcher(dir, input)
+	result := CheckDispatcher(worktree, input)
 	if result.Allowed {
 		t.Error("expected ARCHITECTURE.md write to be blocked for wrong BLT agent")
 	}
 }
 
 func TestCheckDispatcher_BlockReasonContainsInstructions(t *testing.T) {
-	dir := setupDispatcher(t)
+	dir, _ := setupDispatcher(t)
 	input := HookInput{
 		ToolName:  "Write",
 		ToolInput: ToolInput{FilePath: "/project/DESIGN.md"},

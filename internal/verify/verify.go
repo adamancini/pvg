@@ -125,7 +125,7 @@ func Scan(paths []string, opts Options) (*Result, error) {
 				return nil, err
 			}
 		} else {
-			scanFile(p, opts, result)
+			scanFile(p, opts, result, true)
 		}
 	}
 
@@ -204,20 +204,20 @@ func scanDir(dir string, opts Options, result *Result) error {
 			return nil
 		}
 
-		scanFile(path, opts, result)
+		scanFile(path, opts, result, false)
 		return nil
 	})
 }
 
 // scanFile checks a single file for stub patterns and substance.
-func scanFile(path string, opts Options, result *Result) {
+func scanFile(path string, opts Options, result *Result, explicitFile bool) {
 	ext := filepath.Ext(path)
 	if !sourceExtensions[ext] {
 		return
 	}
 
 	// Skip test files unless opted in
-	if !opts.IncludeTests && isTestFile(path) {
+	if !opts.IncludeTests && !explicitFile && isTestFile(path) {
 		return
 	}
 

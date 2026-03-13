@@ -139,6 +139,8 @@ var ndLabelsAddRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\
 
 // ndUpdateAddLabelRe matches: nd [global-flags] update <id> ... --add-label=<label> or --add-label <label>
 var ndUpdateAddLabelRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*update\s+(\S+)\s+.*?--add-label(?:=| )(\S+)`)
+var ndDeferRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*defer\s+(\S+)(?:\s|$)`)
+var ndUndeferRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*undefer\s+(\S+)(?:\s|$)`)
 
 // parseNdStatusChange extracts issue IDs and new status from an nd command.
 // Returns multiple IDs for "nd close id1 id2 ...".
@@ -198,6 +200,22 @@ func parseNdContractLabelAdd(command string) (issueID string, labels []string, f
 	}
 
 	return "", nil, false
+}
+
+func parseNdDeferCommand(command string) (issueID string, found bool) {
+	if matches := ndDeferRe.FindStringSubmatch(command); len(matches) == 2 {
+		id := strings.Trim(matches[1], `"'`)
+		return id, id != ""
+	}
+	return "", false
+}
+
+func parseNdUndeferCommand(command string) (issueID string, found bool) {
+	if matches := ndUndeferRe.FindStringSubmatch(command); len(matches) == 2 {
+		id := strings.Trim(matches[1], `"'`)
+		return id, id != ""
+	}
+	return "", false
 }
 
 // ReadIssueStatus reads the status from an nd issue's frontmatter.
@@ -263,6 +281,25 @@ func CheckFSM(projectRoot, command string) Result {
 		}
 	}
 
+	if issueID, found := parseNdDeferCommand(command); found {
+		currentStatus := ReadIssueStatus(projectRoot, issueID)
+		if currentStatus != "" {
+			if r := ValidateTransition(wc, issueID, currentStatus, "deferred"); !r.Allowed {
+				return r
+			}
+		}
+	}
+
+	if issueID, found := parseNdUndeferCommand(command); found {
+		currentStatus := ReadIssueStatus(projectRoot, issueID)
+		if currentStatus != "" {
+			targetStatus := resumeStatusFromDeferred(wc)
+			if r := ValidateTransition(wc, issueID, currentStatus, targetStatus); !r.Allowed {
+				return r
+			}
+		}
+	}
+
 	if issueID, labels, found := parseNdContractLabelAdd(command); found {
 		currentStatus := ReadIssueStatus(projectRoot, issueID)
 		if currentStatus == "" {
@@ -276,6 +313,18 @@ func CheckFSM(projectRoot, command string) Result {
 	}
 
 	return Result{Allowed: true}
+}
+
+func resumeStatusFromDeferred(wc WorkflowConfig) string {
+	if targets, ok := wc.ExitRules["deferred"]; ok && len(targets) > 0 {
+		for _, target := range targets {
+			if target == "open" {
+				return "open"
+			}
+		}
+		return targets[0]
+	}
+	return "open"
 }
 
 func validateContractLabel(issueID, currentStatus, label string) Result {

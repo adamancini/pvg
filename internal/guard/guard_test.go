@@ -1,6 +1,8 @@
 package guard
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -257,6 +259,74 @@ EOF`},
 	result := Check(testVaultDir, testProjectRoot, input)
 	if result.Allowed {
 		t.Errorf("expected blocked for relative write to .vault/knowledge/, got allowed")
+	}
+}
+
+func TestCheckFilePath_BlocksSharedProjectIssues(t *testing.T) {
+	projectRoot, sharedVault := setupPaivotWorktree(t)
+	issuePath := filepath.Join(sharedVault, "issues", "PROJ-a1b2.md")
+	if err := os.MkdirAll(filepath.Dir(issuePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Write",
+		ToolInput: ToolInput{FilePath: issuePath},
+	}
+	result := Check(testVaultDir, projectRoot, input)
+	if result.Allowed {
+		t.Fatal("expected shared nd-vault issue write to be blocked")
+	}
+	if result.Reason != projectIssuesBlockMsg {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_BlocksSharedProjectIssues(t *testing.T) {
+	projectRoot, sharedVault := setupPaivotWorktree(t)
+	issuePath := filepath.Join(sharedVault, "issues", "PROJ-a1b2.md")
+	if err := os.MkdirAll(filepath.Dir(issuePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName: "Bash",
+		ToolInput: ToolInput{Command: `cat > ` + issuePath + ` << 'EOF'
+content
+EOF`},
+	}
+	result := Check(testVaultDir, projectRoot, input)
+	if result.Allowed {
+		t.Fatal("expected shared nd-vault issue bash write to be blocked")
+	}
+	if result.Reason != projectIssuesBlockMsg {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_BlocksSharedProjectIssuesRelativePath(t *testing.T) {
+	projectRoot, sharedVault := setupPaivotWorktree(t)
+	issuePath := filepath.Join(sharedVault, "issues", "PROJ-a1b2.md")
+	if err := os.MkdirAll(filepath.Dir(issuePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	relPath, err := filepath.Rel(projectRoot, issuePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName: "Bash",
+		ToolInput: ToolInput{Command: `cat > ` + relPath + ` << 'EOF'
+content
+EOF`},
+	}
+	result := Check(testVaultDir, projectRoot, input)
+	if result.Allowed {
+		t.Fatal("expected relative shared nd-vault issue bash write to be blocked")
+	}
+	if result.Reason != projectIssuesBlockMsg {
+		t.Fatalf("unexpected reason: %s", result.Reason)
 	}
 }
 

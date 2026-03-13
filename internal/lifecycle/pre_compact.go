@@ -56,7 +56,8 @@ func outputTwoTierGuidance() {
   - Universal insights (applicable to ANY project) -> global vault _inbox/
       vlt vault="Claude" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
   - Project-specific insights (only relevant HERE) -> .vault/knowledge/ locally
-      Create files directly in .vault/knowledge/decisions/, patterns/, debug/, or conventions/
+      Use vlt against the local vault, for example:
+      vlt vault=".vault" create name="<Title>" path="knowledge/decisions/<Title>.md" content="..." silent
 `)
 	}
 }

@@ -109,7 +109,7 @@ func TestBuildContinuationPrompt_Header(t *testing.T) {
 		NewIteration: 7,
 		Reason:       "Actionable work remains",
 	}
-	wc := &loop.WorkCounts{Ready: 1, Delivered: 2, InProgress: 3, Blocked: 4}
+	wc := &loop.WorkCounts{Ready: 1, Delivered: 2, InProgress: 3, Blocked: 4, Other: 5}
 
 	prompt := BuildContinuationPrompt(state, decision, "20", wc)
 
@@ -127,5 +127,8 @@ func TestBuildContinuationPrompt_Header(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Blocked: 4") {
 		t.Error("expected Blocked count in header")
+	}
+	if !strings.Contains(prompt, "Other: 5") {
+		t.Error("expected Other count in header")
 	}
 }

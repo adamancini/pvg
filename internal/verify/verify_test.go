@@ -233,6 +233,27 @@ func TestSomething(t *testing.T) {
 	}
 }
 
+func TestScan_ExplicitTestFileIsScanned(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "auth_test.go", `package auth
+
+import "testing"
+
+func TestSomething(t *testing.T) {
+	panic("not implemented")
+}
+`)
+
+	result, err := Scan([]string{path}, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FilesScanned != 1 {
+		t.Fatalf("expected explicit test file to be scanned, got %d files", result.FilesScanned)
+	}
+	assertHasIssue(t, result, "stub", 6)
+}
+
 func TestScan_IncludesTestFilesWhenOptedIn(t *testing.T) {
 	dir := t.TempDir()
 	code := `package auth
