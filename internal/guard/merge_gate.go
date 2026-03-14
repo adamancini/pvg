@@ -15,6 +15,7 @@ import (
 
 var gitIntegrationRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?git\s+(merge|pull|rebase|cherry-pick)\b`)
 var storyRefRe = regexp.MustCompile(`(?:^|[\s"'=])(?:refs/(?:remotes/origin|heads)/|origin/)?story/([A-Za-z0-9._-]+)`)
+var shaRefRe = regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
 
 const mergeGateBlockMsg = "BLOCKED: Cannot merge story branch before PM-Acceptor completion.\n\n" +
 	"Story %s must be both labeled 'accepted' and closed in nd before merge.\n" +
@@ -46,6 +47,11 @@ func CheckMergeGate(projectRoot, command string) Result {
 	}
 
 	storyIDs := parseStoryRefs(command)
+	for _, storyID := range resolveStoryRefs(projectRoot, command) {
+		if !containsStoryID(storyIDs, storyID) {
+			storyIDs = append(storyIDs, storyID)
+		}
+	}
 	if len(storyIDs) == 0 {
 		return Result{Allowed: true}
 	}
@@ -142,6 +148,68 @@ func parseStoryRefs(command string) []string {
 		storyIDs = append(storyIDs, storyID)
 	}
 	return storyIDs
+}
+
+func resolveStoryRefs(projectRoot, command string) []string {
+	if projectRoot == "" || !gitIntegrationRe.MatchString(command) {
+		return nil
+	}
+
+	var storyIDs []string
+	seen := make(map[string]bool)
+	for _, ref := range shaRefRe.FindAllString(command, -1) {
+		for _, storyID := range storyIDsForRef(projectRoot, ref) {
+			if storyID == "" || seen[storyID] {
+				continue
+			}
+			seen[storyID] = true
+			storyIDs = append(storyIDs, storyID)
+		}
+	}
+	return storyIDs
+}
+
+func storyIDsForRef(projectRoot, ref string) []string {
+	cmd := exec.Command("git", "branch", "-a", "--contains", ref, "--format", "%(refname:short)")
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	var storyIDs []string
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(string(out), "\n") {
+		branch := strings.TrimSpace(line)
+		if branch == "" {
+			continue
+		}
+		storyID := storyIDFromBranch(branch)
+		if storyID == "" || seen[storyID] {
+			continue
+		}
+		seen[storyID] = true
+		storyIDs = append(storyIDs, storyID)
+	}
+	return storyIDs
+}
+
+func storyIDFromBranch(branch string) string {
+	for _, prefix := range []string{"story/", "origin/story/", "remotes/origin/story/"} {
+		if strings.HasPrefix(branch, prefix) {
+			return strings.TrimPrefix(branch, prefix)
+		}
+	}
+	return ""
+}
+
+func containsStoryID(storyIDs []string, target string) bool {
+	for _, storyID := range storyIDs {
+		if storyID == target {
+			return true
+		}
+	}
+	return false
 }
 
 func mergeGateEnabled(projectRoot string) bool {

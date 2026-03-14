@@ -131,8 +131,8 @@ func resolveAgentSrc(pluginDir string) (string, error) {
 		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
 
-	// Walk the paivot-claude cache to find agents/ directories.
-	cacheBase := filepath.Join(home, ".claude", "plugins", "cache", "paivot-claude")
+	// Walk the paivot-graph cache to find agents/ directories.
+	cacheBase := filepath.Join(home, ".claude", "plugins", "cache", "paivot-graph")
 	var candidates []string
 
 	_ = filepath.WalkDir(cacheBase, func(path string, d os.DirEntry, err error) error {
@@ -146,7 +146,7 @@ func resolveAgentSrc(pluginDir string) (string, error) {
 	})
 
 	if len(candidates) == 0 {
-		return "", fmt.Errorf("could not find paivot-claude agents directory in plugin cache.\nSet AGENT_SRC=/path/to/agents manually, or install paivot-claude first")
+		return "", fmt.Errorf("could not find paivot-graph agents directory in plugin cache.\nSet AGENT_SRC=/path/to/agents manually, or install paivot-graph first")
 	}
 
 	// Pick the newest candidate by directory modification time.

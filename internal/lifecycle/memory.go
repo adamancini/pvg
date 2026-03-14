@@ -70,29 +70,13 @@ func MemoryWrite() error {
 		}
 
 		mirrorNote := projectName + "-memory"
-		timestamp := time.Now().Format("2006-01-02")
-
-		// Build frontmatter
-		frontmatter := fmt.Sprintf(`---
-type: project
-project: %s
-status: active
-created: %s
----
-
-# %s Memory Mirror
-
-Auto-synced from Claude native memory.
-
-`, projectName, timestamp, projectName)
-
-		fullContent := frontmatter + content
+		bodyContent, fullContent := buildMemoryMirrorContent(projectName, content)
 
 		// Try to write to existing note first (update mode)
 		result, err := vaultClient.Read(mirrorNote, "")
 		if err == nil && result.Content != "" {
-			// Note exists -- update it via Patch
-			if err := vaultClient.Patch(mirrorNote, vlt.PatchOptions{Content: fullContent, Timestamps: true}); err != nil {
+			// Note exists -- replace body while preserving frontmatter.
+			if err := vaultClient.Write(mirrorNote, bodyContent, true); err != nil {
 				// Fail-open: log and continue
 				fmt.Fprintf(os.Stderr, "pvg hook memory-write: failed to update vault note: %v\n", err)
 			}
@@ -194,6 +178,13 @@ func handleMemoryOperation(expectedTool string, handler func(*memoryToolInput, *
 		// Vault not available -- allow operation to proceed without vault mirroring
 		return nil
 	}
+	unlock := func() {}
+	if lock, lockErr := vlt.LockVault(vaultClient.Dir(), expectedTool != "Read"); lockErr == nil {
+		unlock = lock
+	} else {
+		fmt.Fprintf(os.Stderr, "pvg hook memory-%s: cannot lock vault: %v\n", strings.ToLower(expectedTool), lockErr)
+	}
+	defer unlock()
 
 	// Call operation-specific handler
 	msg, err := handler(&input, vaultClient, projectName)
@@ -211,6 +202,24 @@ func handleMemoryOperation(expectedTool string, handler func(*memoryToolInput, *
 	}
 
 	return nil
+}
+
+func buildMemoryMirrorContent(projectName, content string) (bodyContent, fullContent string) {
+	timestamp := time.Now().Format("2006-01-02")
+	bodyContent = fmt.Sprintf(`# %s Memory Mirror
+
+Auto-synced from Claude native memory.
+
+%s`, projectName, content)
+	fullContent = fmt.Sprintf(`---
+type: project
+project: %s
+status: active
+created: %s
+---
+
+%s`, projectName, timestamp, bodyContent)
+	return bodyContent, fullContent
 }
 
 // isMemoryPath checks if a file path looks like a Claude memory file.

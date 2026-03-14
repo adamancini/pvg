@@ -249,6 +249,66 @@ func TestCheckDispatcher_BashBlocksDFWriteWithWrongAgent(t *testing.T) {
 	}
 }
 
+func TestCheckDispatcher_BashBlocksMutatingNDCommandFromCoordinator(t *testing.T) {
+	root, _ := setupDispatcher(t)
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd close PROJ-a1b2`},
+	}
+	result := CheckDispatcher(root, input)
+	if result.Allowed {
+		t.Fatal("expected coordinator nd mutation to be blocked in dispatcher mode")
+	}
+}
+
+func TestCheckDispatcher_BashAllowsMutatingNDCommandFromDeveloperWorktree(t *testing.T) {
+	_, worktree := setupDispatcher(t)
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:developer"); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd update PROJ-a1b2 --add-label delivered`},
+	}
+	result := CheckDispatcher(worktree, input)
+	if !result.Allowed {
+		t.Fatalf("expected developer worktree nd mutation allowed, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckDispatcher_BashAllowsMutatingNDCommandFromPMWorktree(t *testing.T) {
+	_, worktree := setupDispatcher(t)
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:pm"); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd close PROJ-a1b2`},
+	}
+	result := CheckDispatcher(worktree, input)
+	if !result.Allowed {
+		t.Fatalf("expected pm worktree nd close allowed, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckDispatcher_BashAllowsMutatingNDCommandFromSrPMWorktree(t *testing.T) {
+	_, worktree := setupDispatcher(t)
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:sr-pm"); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd create "Story title"`},
+	}
+	result := CheckDispatcher(worktree, input)
+	if !result.Allowed {
+		t.Fatalf("expected sr-pm worktree nd create allowed, got blocked: %s", result.Reason)
+	}
+}
+
 func TestCheckDispatcher_BlockReasonContainsInstructions(t *testing.T) {
 	dir, _ := setupDispatcher(t)
 	input := HookInput{

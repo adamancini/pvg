@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestResolve_PrefersSharedVaultForPaivotWorktree(t *testing.T) {
-	projectRoot, sharedVault := setupPaivotWorktree(t)
+func TestResolve_PrefersSharedVaultForConfiguredWorktree(t *testing.T) {
+	projectRoot, sharedVault := setupSharedWorktree(t)
 
 	localVault := filepath.Join(projectRoot, ".vault")
 	if err := os.MkdirAll(localVault, 0o755); err != nil {
@@ -71,7 +71,7 @@ func TestResolve_UsesEnvironmentOverride(t *testing.T) {
 }
 
 func TestResolve_PrefersSharedVaultFromNestedWorktree(t *testing.T) {
-	projectRoot, sharedVault := setupPaivotWorktree(t)
+	projectRoot, sharedVault := setupSharedWorktree(t)
 
 	worktreeRoot := filepath.Join(projectRoot, ".claude", "worktrees", "agent-1")
 	worktreeGitDir := filepath.Join(filepath.Dir(sharedVault), "..", "worktrees", "agent-1")
@@ -100,7 +100,7 @@ func TestResolve_PrefersSharedVaultFromNestedWorktree(t *testing.T) {
 	}
 }
 
-func setupPaivotWorktree(t *testing.T) (projectRoot, sharedVault string) {
+func setupSharedWorktree(t *testing.T) (projectRoot, sharedVault string) {
 	t.Helper()
 
 	base := t.TempDir()
@@ -109,10 +109,10 @@ func setupPaivotWorktree(t *testing.T) (projectRoot, sharedVault string) {
 	commonDir := filepath.Join(base, "gitdir")
 	sharedVault = filepath.Join(commonDir, sharedVaultRelPath)
 
-	if err := os.MkdirAll(filepath.Join(projectRoot, ".vault", "knowledge"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".vault"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(projectRoot, ".vault", "knowledge", ".settings.yaml"), []byte("workflow.fsm: false\n"), 0o644); err != nil {
+	if err := os.WriteFile(SharedConfigPath(projectRoot), []byte(DefaultSharedConfig()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(gitDir, 0o755); err != nil {

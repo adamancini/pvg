@@ -269,6 +269,18 @@ func TestOn_InitializesProjectVault(t *testing.T) {
 	if len(data) == 0 {
 		t.Error("expected non-empty .settings.yaml")
 	}
+
+	sharedPath := filepath.Join(dir, ".vault", ".nd-shared.yaml")
+	sharedData, err := os.ReadFile(sharedPath)
+	if err != nil {
+		t.Fatalf("expected .nd-shared.yaml to exist: %v", err)
+	}
+	if !strings.Contains(string(sharedData), "mode: git_common_dir") {
+		t.Fatalf("expected shared nd config to contain mode, got %q", string(sharedData))
+	}
+	if !strings.Contains(string(sharedData), "path: paivot/nd-vault") {
+		t.Fatalf("expected shared nd config to contain path, got %q", string(sharedData))
+	}
 }
 
 func TestOn_DoesNotOverwriteExistingSettings(t *testing.T) {

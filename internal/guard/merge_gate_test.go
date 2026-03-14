@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/paivot-ai/pvg/internal/dispatcher"
@@ -232,6 +233,43 @@ func TestCheckMergeGate_CherryPickStoryRef(t *testing.T) {
 	}
 }
 
+func TestCheckMergeGate_BlocksCherryPickByStoryCommitSHA(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Test User")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+	runGit(t, repo, "checkout", "-b", "story/PROJ-a1b2")
+	if err := os.WriteFile(filepath.Join(repo, "story.txt"), []byte("story work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "story.txt")
+	runGit(t, repo, "commit", "-m", "story work")
+	storySHA := strings.TrimSpace(runGitOutput(t, repo, "rev-parse", "HEAD"))
+	runGit(t, repo, "checkout", "-b", "epic/PROJ-epic-right", "main")
+
+	writeProjectSettings(t, repo)
+	sharedVault := filepath.Join(repo, ".git", "paivot", "nd-vault")
+	issuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(issuesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: Test\nstatus: in_progress\nparent: PROJ-epic-right\nlabels: [delivered]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-a1b2.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(repo, "git cherry-pick "+storySHA)
+	if r.Allowed {
+		t.Fatal("expected blocked for story commit cherry-pick by SHA")
+	}
+}
+
 func TestCheckMergeGate_EmptyCommand(t *testing.T) {
 	r := CheckMergeGate("/some/dir", "")
 	if !r.Allowed {
@@ -405,6 +443,17 @@ func runGit(t *testing.T, dir string, args ...string) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)
 	}
+}
+
+func runGitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+	return string(out)
 }
 
 // --- ReadIssueLabels tests ---

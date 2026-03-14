@@ -3,6 +3,7 @@ package guard
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/paivot-ai/pvg/internal/dispatcher"
@@ -13,6 +14,14 @@ var dfArtifacts = map[string]string{
 	"BUSINESS.md":     "business-analyst",
 	"DESIGN.md":       "designer",
 	"ARCHITECTURE.md": "architect",
+}
+
+var ndMutatingCommandRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*(create|update|close|reopen|defer|undefer|labels\s+(?:add|remove)|comments\s+add|link|unlink)\b`)
+
+var dispatcherMutatingAgents = []string{
+	"paivot-graph:sr-pm",
+	"paivot-graph:developer",
+	"paivot-graph:pm",
 }
 
 // CheckDispatcher enforces dispatcher mode: blocks D&F file writes when
@@ -32,7 +41,10 @@ func CheckDispatcher(projectRoot string, input HookInput) Result {
 	case "Edit", "Write":
 		return checkDFFilePath(projectRoot, state, input.ToolInput.FilePath)
 	case "Bash":
-		return checkDFBashCommand(projectRoot, state, input.ToolInput.Command)
+		if result := checkDFBashCommand(projectRoot, state, input.ToolInput.Command); !result.Allowed {
+			return result
+		}
+		return checkDispatcherNDMutation(projectRoot, state, input.ToolInput.Command)
 	default:
 		return Result{Allowed: true}
 	}
@@ -121,4 +133,33 @@ func dfBlockMsg(artifact, agentName string) string {
 			"  - ARCHITECTURE.md --> architect agent\n\n"+
 			"To write %s, spawn the %s agent.",
 		artifact, agentName)
+}
+
+func checkDispatcherNDMutation(projectRoot string, state *dispatcher.State, command string) Result {
+	if command == "" || !ndMutatingCommandRe.MatchString(command) {
+		return Result{Allowed: true}
+	}
+
+	if dispatcherWriteAllowed(projectRoot, state) {
+		return Result{Allowed: true}
+	}
+
+	return Result{
+		Allowed: false,
+		Reason: "BLOCKED: Dispatcher mode is active. Mutating nd commands must be delegated to a tracked production agent.\n" +
+			"The coordinator may read nd state, but story/backlog mutations must come from the responsible agent worktree.\n" +
+			"Use:\n" +
+			"  - sr-pm for story/backlog creation and repair\n" +
+			"  - developer for delivery/progress updates\n" +
+			"  - pm for accept/reject and close/reopen actions",
+	}
+}
+
+func dispatcherWriteAllowed(projectRoot string, state *dispatcher.State) bool {
+	for _, agentType := range dispatcherMutatingAgents {
+		if dispatcher.HasActiveAgentTypeAtPath(state, agentType, projectRoot) {
+			return true
+		}
+	}
+	return false
 }

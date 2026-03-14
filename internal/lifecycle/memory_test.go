@@ -2,10 +2,13 @@ package lifecycle
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/RamXX/vlt"
 )
 
 func TestIsMemoryPath_MatchesClaudeMemory(t *testing.T) {
@@ -155,5 +158,63 @@ created: ` + now + `
 	}
 	if !strings.Contains(frontmatter, "status: active") {
 		t.Error("frontmatter missing status")
+	}
+}
+
+func TestBuildMemoryMirrorContent(t *testing.T) {
+	body, full := buildMemoryMirrorContent("test-project", "Remember this")
+
+	if !strings.Contains(body, "# test-project Memory Mirror") {
+		t.Fatalf("body missing heading: %q", body)
+	}
+	if !strings.Contains(body, "Remember this") {
+		t.Fatalf("body missing content: %q", body)
+	}
+	if !strings.Contains(full, "project: test-project") {
+		t.Fatalf("full content missing project frontmatter: %q", full)
+	}
+}
+
+func TestMemoryWrite_UpdatePathUsesWriteCompatibleBody(t *testing.T) {
+	dir := t.TempDir()
+	notePath := filepath.Join(dir, "_inbox", "demo-memory.md")
+	if err := os.MkdirAll(filepath.Dir(notePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	body1, full1 := buildMemoryMirrorContent("demo", "First")
+	if err := os.WriteFile(notePath, []byte(full1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	vaultClient, err := vlt.Open(dir)
+	if err != nil {
+		t.Fatalf("open vault: %v", err)
+	}
+
+	body2, _ := buildMemoryMirrorContent("demo", "Second")
+	if err := vaultClient.Write("demo-memory", body2, true); err != nil {
+		t.Fatalf("Write should replace existing memory mirror body: %v", err)
+	}
+
+	data, err := os.ReadFile(notePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "project: demo") {
+		t.Fatalf("frontmatter should be preserved after write: %q", text)
+	}
+	if strings.Contains(text, "First") {
+		t.Fatalf("old memory content should be replaced: %q", text)
+	}
+	if !strings.Contains(text, "Second") {
+		t.Fatalf("new memory content missing after write: %q", text)
+	}
+	if strings.Count(text, "project: demo") != 1 {
+		t.Fatalf("frontmatter duplicated after write: %q", text)
+	}
+	if !strings.Contains(body1, "First") {
+		t.Fatal("sanity check failed: initial body missing first content")
 	}
 }

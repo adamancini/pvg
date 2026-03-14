@@ -40,6 +40,11 @@ func SessionEnd() error {
 	// 5. Try vlt first
 	v, err := vaultcfg.OpenVault()
 	if err == nil {
+		unlock := func() {}
+		if lock, lockErr := vlt.LockVault(v.Dir(), true); lockErr == nil {
+			unlock = lock
+		}
+		defer unlock()
 		_ = v.Append(project, entry, false)
 		return nil
 	}

@@ -13,11 +13,15 @@ type subagentInput struct {
 	AgentType string `json:"agent_type"`
 }
 
-// bltAgentTypes are the agent types that produce D&F artifacts.
-var bltAgentTypes = map[string]bool{
+// trackedAgentTypes are the agent types that dispatcher mode must track for
+// structural enforcement.
+var trackedAgentTypes = map[string]bool{
 	"paivot-graph:business-analyst": true,
 	"paivot-graph:designer":         true,
 	"paivot-graph:architect":        true,
+	"paivot-graph:sr-pm":            true,
+	"paivot-graph:developer":        true,
+	"paivot-graph:pm":               true,
 }
 
 // SubagentStart tracks a BLT agent when it starts.
@@ -28,7 +32,7 @@ func SubagentStart() error {
 		return nil
 	}
 
-	if !bltAgentTypes[input.AgentType] {
+	if !trackedAgentTypes[input.AgentType] {
 		return nil
 	}
 
@@ -49,7 +53,7 @@ func SubagentStop() error {
 		return nil
 	}
 
-	if !bltAgentTypes[input.AgentType] {
+	if !trackedAgentTypes[input.AgentType] {
 		return nil
 	}
 

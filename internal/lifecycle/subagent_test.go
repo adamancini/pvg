@@ -4,31 +4,31 @@ import (
 	"testing"
 )
 
-func TestBltAgentTypes_ContainsExpected(t *testing.T) {
+func TestTrackedAgentTypes_ContainsExpected(t *testing.T) {
 	expected := []string{
 		"paivot-graph:business-analyst",
 		"paivot-graph:designer",
 		"paivot-graph:architect",
+		"paivot-graph:sr-pm",
+		"paivot-graph:developer",
+		"paivot-graph:pm",
 	}
 	for _, agentType := range expected {
-		if !bltAgentTypes[agentType] {
-			t.Errorf("expected %q in bltAgentTypes", agentType)
+		if !trackedAgentTypes[agentType] {
+			t.Errorf("expected %q in trackedAgentTypes", agentType)
 		}
 	}
 }
 
-func TestBltAgentTypes_RejectsNonBLT(t *testing.T) {
-	nonBLT := []string{
-		"paivot-graph:developer",
-		"paivot-graph:sr-pm",
-		"paivot-graph:pm",
+func TestTrackedAgentTypes_RejectsUntracked(t *testing.T) {
+	untracked := []string{
 		"paivot-graph:anchor",
 		"paivot-graph:retro",
 		"general-purpose",
 	}
-	for _, agentType := range nonBLT {
-		if bltAgentTypes[agentType] {
-			t.Errorf("did not expect %q in bltAgentTypes", agentType)
+	for _, agentType := range untracked {
+		if trackedAgentTypes[agentType] {
+			t.Errorf("did not expect %q in trackedAgentTypes", agentType)
 		}
 	}
 }

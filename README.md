@@ -100,7 +100,7 @@ Two protection layers:
 1. **System vault** -- Protects methodology/, conventions/, decisions/, patterns/, debug/, concepts/, projects/, people/. Allows `_inbox/` and `_templates/`.
 2. **Project vault** -- Protects `.vault/knowledge/` files. Allows `.settings.yaml`.
 
-All `vlt` commands are always allowed (they use advisory locking for concurrent safety).
+`vlt` CLI commands remain the intended path for vault changes. Direct file I/O is blocked because it bypasses advisory locking. `pvg` hook write paths acquire explicit `vlt` locks before mirroring session state.
 
 Additional execution safeguard:
 - **Story merge gate** -- In Paivot-managed repos, `git merge story/<STORY_ID>` is blocked until the matching nd issue is both labeled `accepted` and `closed`. This applies during active loops and other Paivot execution flows, even if dispatcher mode is currently off.

@@ -8,12 +8,13 @@ import (
 )
 
 const sharedVaultRelPath = "paivot/nd-vault"
+const sharedConfigRelPath = ".vault/.nd-shared.yaml"
 
 // Resolve returns the nd vault path for a project root.
 //
-// In Paivot-managed repos, the live nd vault is branch-independent and lives
-// under the repository's git common dir. Non-Paivot repos fall back to the
-// nearest local .vault directory.
+// In repos configured for shared worktree state, the live nd vault is
+// branch-independent and lives under the repository's git common dir. Repos
+// without shared state fall back to the nearest local .vault directory.
 func Resolve(projectRoot string) (string, error) {
 	if override := strings.TrimSpace(os.Getenv("ND_VAULT_DIR")); override != "" {
 		return filepath.Clean(override), nil
@@ -24,6 +25,10 @@ func Resolve(projectRoot string) (string, error) {
 	}
 
 	projectRoot = filepath.Clean(projectRoot)
+
+	if shared, err := resolveSharedVaultDir(projectRoot); err == nil {
+		return shared, nil
+	}
 
 	if isPaivotManaged(projectRoot) {
 		commonDir, err := gitCommonDir(projectRoot)
@@ -37,6 +42,90 @@ func Resolve(projectRoot string) (string, error) {
 		return "", err
 	}
 	return local, nil
+}
+
+// SharedConfigPath returns the repository-local config file that tells nd-aware
+// tools how to resolve a shared live vault from git-common-dir.
+func SharedConfigPath(projectRoot string) string {
+	return filepath.Join(filepath.Clean(projectRoot), sharedConfigRelPath)
+}
+
+// DefaultSharedConfig returns the tracked config that points to the default
+// shared worktree nd vault used by paivot-graph.
+func DefaultSharedConfig() string {
+	return "# nd shared-worktree state\nmode: git_common_dir\npath: " + sharedVaultRelPath + "\n"
+}
+
+func resolveSharedVaultDir(start string) (string, error) {
+	configPath, root, err := findSharedConfig(start)
+	if err != nil {
+		return "", err
+	}
+
+	mode, relPath, err := parseSharedConfig(configPath)
+	if err != nil {
+		return "", err
+	}
+	if mode != "git_common_dir" {
+		return "", fmt.Errorf("unsupported shared nd mode %q", mode)
+	}
+
+	commonDir, err := gitCommonDir(root)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(commonDir, relPath), nil
+}
+
+func findSharedConfig(start string) (path, root string, err error) {
+	dir := filepath.Clean(start)
+	for {
+		candidate := SharedConfigPath(dir)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", "", os.ErrNotExist
+}
+
+func parseSharedConfig(path string) (mode, relPath string, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		switch key {
+		case "mode":
+			mode = value
+		case "path":
+			relPath = filepath.Clean(value)
+		}
+	}
+
+	if mode == "" || relPath == "" {
+		return "", "", fmt.Errorf("invalid shared nd config %s", path)
+	}
+	if filepath.IsAbs(relPath) || relPath == "." || relPath == "" {
+		return "", "", fmt.Errorf("invalid shared nd path %q", relPath)
+	}
+	return mode, relPath, nil
 }
 
 func isPaivotManaged(projectRoot string) bool {
