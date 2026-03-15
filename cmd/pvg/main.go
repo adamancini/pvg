@@ -12,7 +12,11 @@
 //	pvg hook stop                # Stop hook
 //	pvg hook session-end         # SessionEnd hook
 //	pvg guard                    # PreToolUse scope guard (stdin: JSON)
+//	pvg nd root --ensure         # Resolve/init shared nd vault
+//	pvg nd ready --json          # Run nd against shared live vault
 //	pvg seed [--force]           # Seed vault with agent prompts
+//	pvg story verify-delivery ID # Check delivery-proof completeness
+//	pvg story merge ID           # Merge an accepted story branch
 //	pvg settings [key|key=value] # View/read/set project settings
 //	pvg loop setup [--all|--epic EPIC_ID] [--max-iterations|--max N]
 //	pvg loop cancel              # Cancel active loop
@@ -28,6 +32,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -40,6 +45,7 @@ import (
 	"github.com/paivot-ai/pvg/internal/loop"
 	"github.com/paivot-ai/pvg/internal/ndvault"
 	"github.com/paivot-ai/pvg/internal/settings"
+	"github.com/paivot-ai/pvg/internal/story"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
 	"github.com/paivot-ai/pvg/internal/verify"
 )
@@ -107,8 +113,12 @@ func main() {
 		err = runLoop(args)
 	case "dispatcher":
 		err = runDispatcher(args)
+	case "nd":
+		err = runND(args)
 	case "settings":
 		err = settings.Run(args)
+	case "story":
+		err = runStory(args)
 	case "verify":
 		err = runVerify(args)
 	case "fetch-vlt-skill":
@@ -125,6 +135,9 @@ func main() {
 	}
 
 	if err != nil {
+		if ec, ok := err.(exitCoder); ok {
+			os.Exit(ec.ExitCode())
+		}
 		fmt.Fprintf(os.Stderr, "pvg %s: %v\n", cmd, err)
 		os.Exit(1)
 	}
@@ -151,13 +164,28 @@ Commands:
   loop snapshot          Checkpoint active agent/worktree state
   loop recover           Clean up after context loss
   dispatcher on|off|status  Manage dispatcher mode
+  nd root [--ensure]       Print (and optionally initialize) the shared live nd vault
+  nd <args...>             Run nd against the shared live vault
   seed [--force]         Seed vault with agent prompts and conventions
   settings [key|key=value]  View, read, or set project settings
+  story <subcommand>        Shared story workflow helpers
   verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
 	help                   Show this help`)
 }
+
+type exitCoder interface {
+	ExitCode() int
+}
+
+type cliExit struct {
+	code int
+}
+
+func (e cliExit) Error() string  { return "" }
+func (e cliExit) ExitCode() int  { return e.code }
+func (e cliExit) String() string { return "" }
 
 func ensureNDInitialized(cwd string) error {
 	vaultDir, err := ndvault.Resolve(cwd)
@@ -259,6 +287,252 @@ func runDispatcher(args []string) error {
 		dispatcher.Status(cwd)
 	default:
 		return fmt.Errorf("unknown dispatcher subcommand %q (use on|off|status)", args[0])
+	}
+	return nil
+}
+
+func runND(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: pvg nd root [--ensure] | pvg nd <nd-args...>")
+	}
+
+	if args[0] == "root" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("cannot determine working directory: %w", err)
+		}
+		ensure := false
+		for _, arg := range args[1:] {
+			if arg == "--ensure" {
+				ensure = true
+				continue
+			}
+			return fmt.Errorf("unknown flag %q", arg)
+		}
+		var vaultDir string
+		if ensure {
+			vaultDir, err = ndvault.Ensure(cwd)
+		} else {
+			vaultDir, err = ndvault.Resolve(cwd)
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Println(vaultDir)
+		return nil
+	}
+
+	for _, arg := range args {
+		if arg == "--vault" || strings.HasPrefix(arg, "--vault=") {
+			return fmt.Errorf("pvg nd manages --vault automatically; remove explicit --vault")
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cannot determine working directory: %w", err)
+	}
+
+	vaultDir, err := ndvault.Ensure(cwd)
+	if err != nil {
+		return fmt.Errorf("ensure nd vault: %w", err)
+	}
+
+	ndArgs := append([]string{"--vault", vaultDir}, args...)
+	cmd := exec.Command("nd", ndArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return cliExit{code: exitErr.ExitCode()}
+		}
+		return fmt.Errorf("run nd: %w", err)
+	}
+	return nil
+}
+
+func runStory(args []string) error {
+	if len(args) == 0 {
+		storyUsage()
+		return fmt.Errorf("missing subcommand")
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cannot determine working directory: %w", err)
+	}
+
+	switch args[0] {
+	case "deliver":
+		if len(args) != 2 {
+			storyUsage()
+			return fmt.Errorf("usage: pvg story deliver <story-id>")
+		}
+		msg, err := story.Transition(cwd, "deliver", args[1], story.TransitionOptions{})
+		if err != nil {
+			return err
+		}
+		fmt.Println(msg)
+		return nil
+	case "accept":
+		return runStoryAccept(cwd, args[1:])
+	case "reject":
+		return runStoryReject(cwd, args[1:])
+	case "merge":
+		return runStoryMerge(cwd, args[1:])
+	case "verify-delivery":
+		return runStoryVerifyDelivery(cwd, args[1:])
+	case "help", "--help", "-h":
+		storyUsage()
+		return nil
+	default:
+		storyUsage()
+		return fmt.Errorf("unknown story subcommand %q", args[0])
+	}
+}
+
+func storyUsage() {
+	fmt.Fprintln(os.Stderr, `pvg story -- shared workflow helpers
+
+Subcommands:
+  deliver <story-id>                      Mark a story delivered
+  accept <story-id> [--reason TEXT] [--next STORY]
+                                         Accept and close a story
+  reject <story-id> [--feedback TEXT]    Reject a story back to open
+  merge <story-id> [--base BRANCH]       Merge an accepted story branch
+  verify-delivery <story-id> [--json]    Check delivery proof completeness`)
+}
+
+func runStoryAccept(cwd string, args []string) error {
+	if len(args) == 0 {
+		storyUsage()
+		return fmt.Errorf("usage: pvg story accept <story-id> [--reason TEXT] [--next STORY]")
+	}
+
+	storyID := args[0]
+	opts := story.TransitionOptions{}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--reason":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--reason requires an argument")
+			}
+			i++
+			opts.Reason = args[i]
+		case "--next":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--next requires an argument")
+			}
+			i++
+			opts.NextStory = args[i]
+		default:
+			return fmt.Errorf("unknown flag %q", args[i])
+		}
+	}
+
+	msg, err := story.Transition(cwd, "accept", storyID, opts)
+	if err != nil {
+		return err
+	}
+	fmt.Println(msg)
+	return nil
+}
+
+func runStoryReject(cwd string, args []string) error {
+	if len(args) == 0 {
+		storyUsage()
+		return fmt.Errorf("usage: pvg story reject <story-id> [--feedback TEXT]")
+	}
+
+	storyID := args[0]
+	opts := story.TransitionOptions{}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--feedback":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--feedback requires an argument")
+			}
+			i++
+			opts.Feedback = args[i]
+		default:
+			return fmt.Errorf("unknown flag %q", args[i])
+		}
+	}
+
+	msg, err := story.Transition(cwd, "reject", storyID, opts)
+	if err != nil {
+		return err
+	}
+	fmt.Println(msg)
+	return nil
+}
+
+func runStoryMerge(cwd string, args []string) error {
+	if len(args) == 0 {
+		storyUsage()
+		return fmt.Errorf("usage: pvg story merge <story-id> [--base BRANCH]")
+	}
+
+	storyID := args[0]
+	baseBranch := ""
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--base":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--base requires an argument")
+			}
+			i++
+			baseBranch = args[i]
+		default:
+			return fmt.Errorf("unknown flag %q", args[i])
+		}
+	}
+
+	msg, err := story.Merge(cwd, storyID, baseBranch)
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return cliExit{code: exitErr.ExitCode()}
+		}
+		return err
+	}
+	fmt.Println(msg)
+	return nil
+}
+
+func runStoryVerifyDelivery(cwd string, args []string) error {
+	if len(args) == 0 {
+		storyUsage()
+		return fmt.Errorf("usage: pvg story verify-delivery <story-id> [--json]")
+	}
+
+	storyID := args[0]
+	jsonOutput := false
+	for _, arg := range args[1:] {
+		if arg == "--json" {
+			jsonOutput = true
+			continue
+		}
+		return fmt.Errorf("unknown flag %q", arg)
+	}
+
+	report, err := story.VerifyDelivery(cwd, storyID)
+	if err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		payload, err := report.FormatJSON()
+		if err != nil {
+			return err
+		}
+		fmt.Println(payload)
+	} else {
+		fmt.Print(report.FormatText())
+	}
+
+	if report.Failed > 0 {
+		return cliExit{code: 1}
 	}
 	return nil
 }

@@ -19,6 +19,9 @@ func Resolve(projectRoot string) (string, error) {
 	if override := strings.TrimSpace(os.Getenv("ND_VAULT_DIR")); override != "" {
 		return filepath.Clean(override), nil
 	}
+	if override := strings.TrimSpace(os.Getenv("PAIVOT_ND_VAULT")); override != "" {
+		return filepath.Clean(override), nil
+	}
 
 	if projectRoot == "" {
 		return "", fmt.Errorf("project root is required")

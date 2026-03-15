@@ -9,6 +9,10 @@ Deterministic CLI for the [paivot-graph](https://github.com/paivot-ai/paivot-gra
 ```
 pvg hook session-start       # Load vault context at session start
 pvg guard                    # PreToolUse scope guard (reads JSON from stdin)
+pvg nd root --ensure         # Resolve/init the shared live nd vault
+pvg nd ready --json          # Run nd against the shared live vault
+pvg story verify-delivery ID # Check nd delivery proof completeness
+pvg story merge ID           # Merge an accepted story branch
 pvg seed [--force]           # Seed vault with agent prompts and conventions
 pvg loop setup --all         # Start unattended execution loop
 pvg loop snapshot            # Checkpoint active agent/worktree state
@@ -85,6 +89,28 @@ Called by Claude Code via `hooks.json`. Each reads JSON from stdin and writes st
 | `pvg hook user-prompt` | UserPromptSubmit | Auto-detect and manage dispatcher mode |
 | `pvg hook subagent-start` | SubagentStart | Track dispatcher-relevant agent activation (BA, Designer, Architect, Sr PM, Developer, PM) |
 | `pvg hook subagent-stop` | SubagentStop | Track dispatcher-relevant agent deactivation |
+
+### Shared nd workflow
+
+```bash
+pvg nd root --ensure                     # Print/init the live shared nd vault path
+pvg nd ready --json                      # Pass through to nd with the shared vault injected
+pvg nd update PROJ-a1b --status=open     # Any nd command works without remembering --vault
+```
+
+`pvg nd` injects the correct shared `--vault` automatically. Use it instead of hand-built shell wrappers or remembered environment variables.
+
+### Story helpers
+
+```bash
+pvg story deliver PROJ-a1b
+pvg story accept PROJ-a1b --reason "Accepted: tests and AC matched"
+pvg story reject PROJ-a1b --feedback "EXPECTED: ... DELIVERED: ... GAP: ... FIX: ..."
+pvg story verify-delivery PROJ-a1b
+pvg story merge PROJ-a1b
+```
+
+These helpers centralize the common Paivot story transitions, delivery-proof checks, and merge path that used to live in shell scripts.
 
 ### Scope guard
 
