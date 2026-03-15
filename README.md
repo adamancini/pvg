@@ -13,6 +13,7 @@ pvg nd root --ensure         # Resolve/init the shared live nd vault
 pvg nd ready --json          # Run nd against the shared live vault
 pvg story verify-delivery ID # Check nd delivery proof completeness
 pvg story merge ID           # Merge an accepted story branch
+pvg loop next --json         # Select the next deterministic orchestration action
 pvg seed [--force]           # Seed vault with agent prompts and conventions
 pvg loop setup --all         # Start unattended execution loop
 pvg loop snapshot            # Checkpoint active agent/worktree state
@@ -137,12 +138,24 @@ Additional execution safeguard:
 pvg loop setup --all                    # Run all ready stories
 pvg loop setup --epic PROJ-a1b          # Target a specific epic
 pvg loop setup --all --max 25           # Limit iterations
+pvg loop next --json                    # Decide delivered vs rejected vs ready next
 pvg loop status                         # Show loop state
 pvg loop cancel                         # Cancel active loop
 pvg loop snapshot                       # Checkpoint active agent/worktree state
 pvg loop snapshot --agent ID=TYPE       # Include agent assignments
 pvg loop recover                        # Clean up after context loss
 ```
+
+`pvg loop next --json` is the host-agnostic queue selector. It tells Codex/OpenCode-style
+dispatchers what to do next without re-implementing the workflow in prompts:
+
+- `decision=act` with a selected story and role (`pm_acceptor` or `developer`)
+- `decision=wait` when only in-progress work remains
+- `decision=complete` when the backlog is done
+- `decision=blocked` when only blocked work remains
+- `decision=other` when only non-dispatcher workflow states remain
+
+In `--epic` mode it drains the priority epic first, then falls back to the rest of the backlog.
 
 ### Dispatcher mode
 

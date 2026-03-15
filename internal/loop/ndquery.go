@@ -13,6 +13,7 @@ import (
 type WorkCounts struct {
 	Ready      int
 	Delivered  int
+	Rejected   int
 	InProgress int
 	Blocked    int
 	Other      int
@@ -21,7 +22,9 @@ type WorkCounts struct {
 // ndIssue matches the PascalCase JSON output of nd.
 type ndIssue struct {
 	ID     string   `json:"ID"`
+	Title  string   `json:"Title"`
 	Status string   `json:"Status"`
+	Parent string   `json:"Parent"`
 	Labels []string `json:"Labels"`
 	Type   string   `json:"Type"`
 }
@@ -58,6 +61,12 @@ func queryAllCounts(projectRoot string) (WorkCounts, error) {
 		}
 	}
 
+	rejectedIssues, err := runND(projectRoot, "list", "--status", "open", "--label", "rejected", "--json")
+	if err != nil {
+		return wc, fmt.Errorf("query rejected work: %w", err)
+	}
+	wc.Rejected = len(rejectedIssues)
+
 	// Blocked issues
 	blockedIssues, err := runND(projectRoot, "blocked", "--json")
 	if err != nil {
@@ -86,12 +95,22 @@ func queryEpicCounts(projectRoot, epicID string) (WorkCounts, error) {
 	for _, issue := range issues {
 		switch strings.ToLower(issue.Status) {
 		case "ready":
+			if hasLabel(issue.Labels, "rejected") {
+				wc.Rejected++
+				continue
+			}
 			wc.Ready++
 		case "in_progress":
 			if hasLabel(issue.Labels, "delivered") {
 				wc.Delivered++
 			} else {
 				wc.InProgress++
+			}
+		case "open":
+			if hasLabel(issue.Labels, "rejected") {
+				wc.Rejected++
+			} else {
+				wc.Other++
 			}
 		case "blocked":
 			wc.Blocked++
@@ -185,6 +204,31 @@ func QueryInProgress(projectRoot string) ([]ndIssue, error) {
 	return runND(projectRoot, "list", "--status", "in_progress", "--json")
 }
 
+// QueryDelivered returns in-progress stories labeled delivered.
+func QueryDelivered(projectRoot string, filters ...string) ([]ndIssue, error) {
+	args := []string{"list", "--status", "in_progress", "--label", "delivered", "--sort", "priority", "--json"}
+	args = append(args, filters...)
+	return runND(projectRoot, args...)
+}
+
+// QueryRejected returns open stories labeled rejected.
+func QueryRejected(projectRoot string, filters ...string) ([]ndIssue, error) {
+	args := []string{"list", "--status", "open", "--label", "rejected", "--sort", "priority", "--json"}
+	args = append(args, filters...)
+	return runND(projectRoot, args...)
+}
+
+// QueryReady returns ready work, excluding rejected stories that must be reworked first.
+func QueryReady(projectRoot string, filters ...string) ([]ndIssue, error) {
+	args := []string{"ready", "--sort", "priority", "--json"}
+	args = append(args, filters...)
+	issues, err := runND(projectRoot, args...)
+	if err != nil {
+		return nil, err
+	}
+	return filterOutLabel(issues, "rejected"), nil
+}
+
 // hasLabel checks if a label exists in a slice (case-insensitive).
 func hasLabel(labels []string, target string) bool {
 	for _, l := range labels {
@@ -193,4 +237,19 @@ func hasLabel(labels []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func filterOutLabel(issues []ndIssue, label string) []ndIssue {
+	if len(issues) == 0 {
+		return nil
+	}
+
+	filtered := make([]ndIssue, 0, len(issues))
+	for _, issue := range issues {
+		if hasLabel(issue.Labels, label) {
+			continue
+		}
+		filtered = append(filtered, issue)
+	}
+	return filtered
 }

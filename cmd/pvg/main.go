@@ -21,6 +21,7 @@
 //	pvg loop setup [--all|--epic EPIC_ID] [--max-iterations|--max N]
 //	pvg loop cancel              # Cancel active loop
 //	pvg loop status              # Show loop state
+//	pvg loop next --json         # Select the next orchestration action
 //	pvg loop snapshot            # Checkpoint agent/worktree state
 //	pvg loop recover             # Clean up after context loss
 //	pvg fetch-vlt-skill [--force] # Download and install vlt skill
@@ -161,6 +162,7 @@ Commands:
   loop setup [flags]     Start an execution loop (--all, --epic ID, --max[-iterations] N)
   loop cancel            Cancel active execution loop
   loop status            Show execution loop state
+  loop next              Select the next orchestration action
   loop snapshot          Checkpoint active agent/worktree state
   loop recover           Clean up after context loss
   dispatcher on|off|status  Manage dispatcher mode
@@ -559,6 +561,8 @@ func runLoop(args []string) error {
 		return loopCancel(cwd)
 	case "status":
 		return loopStatus(cwd)
+	case "next":
+		return loopNext(cwd, args[1:])
 	case "snapshot":
 		return loopSnapshot(cwd, args[1:])
 	case "recover":
@@ -573,11 +577,12 @@ func loopUsage() {
 	fmt.Fprintln(os.Stderr, `pvg loop -- execution loop management
 
 Subcommands:
-  setup [flags]   Start an execution loop
-  cancel          Cancel active execution loop
-  status          Show execution loop state
-  snapshot        Checkpoint active agent/worktree state
-  recover         Clean up after context loss
+	setup [flags]   Start an execution loop
+	cancel          Cancel active execution loop
+	status          Show execution loop state
+  next            Select the next orchestration action
+	snapshot        Checkpoint active agent/worktree state
+	recover         Clean up after context loss
 
 Setup flags:
   --all                    Run all ready work across all epics
@@ -590,12 +595,19 @@ Snapshot flags:
   --agent ID=TYPE          Agent assignment (repeatable, e.g. --agent PROJ-a1b=developer)
   --json                   Output as JSON
 
+Next flags:
+  --all                    Resolve next action against the whole backlog
+  --epic EPIC_ID           Prefer a priority epic, then fall back to the backlog
+  --json                   Output as JSON
+
 Recover flags:
   --json                   Output as JSON
 
 Examples:
   pvg loop setup --all
   pvg loop setup --epic PROJ-a1b
+  pvg loop next --json
+  pvg loop next --epic PROJ-a1b --json
   pvg loop setup PROJ-a1b --max 10
   pvg loop setup --all --max-iterations 25
   pvg loop snapshot --agent PROJ-a1b=developer
@@ -734,6 +746,91 @@ func loopStatus(cwd string) error {
 	fmt.Printf("  Consecutive waits: %d / %d\n", state.ConsecutiveWaits, state.MaxConsecutiveWaits)
 	fmt.Printf("  Total wait iterations: %d\n", state.WaitIterations)
 	fmt.Printf("  Started: %s\n", state.StartedAt)
+	return nil
+}
+
+func loopNext(cwd string, args []string) error {
+	jsonOutput := false
+	mode := ""
+	targetEpic := ""
+	scopeSource := "default"
+	activeLoop := false
+	scopeRoot := cwd
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			loopUsage()
+			return nil
+		case "--json":
+			jsonOutput = true
+		case "--all":
+			mode = "all"
+			targetEpic = ""
+			scopeSource = "flag"
+		case "--epic":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--epic requires an argument")
+			}
+			i++
+			mode = "epic"
+			targetEpic = args[i]
+			scopeSource = "flag"
+		default:
+			if len(args[i]) > 1 && args[i][0] == '-' {
+				return fmt.Errorf("unknown flag %q", args[i])
+			}
+			return fmt.Errorf("unexpected argument: %s", args[i])
+		}
+	}
+
+	if mode == "" {
+		if state, root, err := loop.ReadStateRoot(cwd); err == nil && state.Active {
+			mode = state.Mode
+			targetEpic = state.TargetEpic
+			scopeRoot = root
+			scopeSource = "loop_state"
+			activeLoop = true
+		} else {
+			mode = "all"
+		}
+	}
+
+	result, err := loop.EvaluateNext(scopeRoot, mode, targetEpic)
+	if err != nil {
+		return err
+	}
+	result.ActiveLoop = activeLoop
+	result.ScopeSource = scopeSource
+
+	if jsonOutput {
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal next action: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	fmt.Printf("[NEXT] decision=%s scope=%s", result.Decision, result.ScopeSource)
+	if result.TargetEpic != "" {
+		fmt.Printf(" target=%s", result.TargetEpic)
+	}
+	fmt.Println()
+	fmt.Printf("  Reason: %s\n", result.Reason)
+	fmt.Printf("  Counts: delivered=%d rejected=%d ready=%d in_progress=%d blocked=%d other=%d\n",
+		result.Counts.Delivered, result.Counts.Rejected, result.Counts.Ready,
+		result.Counts.InProgress, result.Counts.Blocked, result.Counts.Other)
+	if result.Next != nil {
+		fmt.Printf("  Next: %s %s (%s, scope=%s", result.Next.Role, result.Next.StoryID, result.Next.Queue, result.Next.Scope)
+		if result.Next.Phase != "" {
+			fmt.Printf(", phase=%s", result.Next.Phase)
+		}
+		if result.Next.HardTDD {
+			fmt.Print(", hard-tdd")
+		}
+		fmt.Println(")")
+	}
 	return nil
 }
 

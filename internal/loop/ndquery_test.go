@@ -146,6 +146,7 @@ func TestQueryWorkCounts_EpicModeStillQueriesWholeBacklog(t *testing.T) {
 	want := [][]string{
 		{"nd", "--vault", override, "ready", "--json"},
 		{"nd", "--vault", override, "list", "--status", "in_progress", "--json"},
+		{"nd", "--vault", override, "list", "--status", "open", "--label", "rejected", "--json"},
 		{"nd", "--vault", override, "blocked", "--json"},
 		{"nd", "--vault", override, "list", "--status", "!closed", "--json"},
 	}
