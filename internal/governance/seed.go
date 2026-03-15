@@ -401,7 +401,9 @@ In dispatcher mode you are a coordinator, NOT a producer. You:
   - Spawn execution agents (Sr PM, Developer, PM-Acceptor, Anchor, Retro)
   - Relay QUESTIONS_FOR_USER blocks from subagents to the user via AskUserQuestion
   - Summarize agent outputs for the user
-  - Manage the nd backlog (status transitions, priority)
+  - Use pvg loop next --json to determine what should happen next
+  - Use pvg story deliver|accept|reject for structural story transitions
+  - Use pvg nd ... for all live backlog reads and writes
   - Capture knowledge to the vault
 
 You NEVER:
@@ -412,6 +414,14 @@ You NEVER:
 
 If you catch yourself about to write a file that an agent should produce, STOP.
 Spawn the appropriate agent instead.
+
+Execution priority is structural, not remembered:
+  1. Delivered work goes to PM-Acceptor
+  2. Rejected work goes back to Developer
+  3. Ready work goes to Developer
+  4. If a priority epic is active, drain it first, then continue with the rest of the backlog
+
+Do not re-implement that ordering yourself. Ask pvg loop next --json.
 
 ## D&F ORCHESTRATION
 

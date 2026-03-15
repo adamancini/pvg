@@ -4,7 +4,7 @@
 [![Release](https://github.com/paivot-ai/pvg/actions/workflows/release.yml/badge.svg)](https://github.com/paivot-ai/pvg/actions/workflows/release.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/paivot-ai/pvg)](https://goreportcard.com/report/github.com/paivot-ai/pvg)
 
-Deterministic CLI for the [paivot-graph](https://github.com/paivot-ai/paivot-graph) Claude Code plugin. Replaces shell scripts with a single Go binary that handles vault governance, session lifecycle hooks, scope guards, execution loop management, and dispatcher mode.
+Deterministic control plane for Paivot runtimes with external orchestration surfaces. `pvg` started as the enforcement binary for [paivot-graph](https://github.com/paivot-ai/paivot-graph), and now also owns the shared workflow operations used by Codex and OpenCode: live `nd` routing, deterministic next-step selection, story transitions, merge gating, recovery, and vault governance.
 
 ```
 pvg hook session-start       # Load vault context at session start
@@ -23,16 +23,32 @@ pvg version                  # Print version
 
 ## Why pvg exists
 
-paivot-graph is a Claude Code plugin that turns an Obsidian vault into a persistent knowledge layer for AI agents. Early versions used shell scripts for hooks, guards, and vault seeding. As the plugin grew, the scripts became fragile -- quoting issues, inconsistent error handling, and no way to test edge cases deterministically.
+Paivot needs some parts of the workflow to be structural rather than advisory:
 
-pvg consolidates all of this into a single Go binary:
+- the live backlog must stay shared across worktrees
+- the dispatcher must know what happens next after compaction or agent failure
+- delivery and acceptance transitions must be consistent across hosts
+- merges, vault writes, and recovery paths must be enforceable instead of remembered
+
+Early versions handled that with shell scripts and prompt conventions. As the system grew, that became too fragile: quoting drift, inconsistent recovery behavior, and too much runtime-critical logic living only in prompts.
+
+`pvg` consolidates that into a single Go binary:
 
 - **Scope guard** -- Blocks direct writes to protected vault directories (methodology/, conventions/, decisions/, etc.), enforcing the proposal workflow. Allows `_inbox/` writes and all `vlt` commands.
 - **Session lifecycle** -- Loads vault context at session start, saves knowledge before compaction and stop, logs session end.
 - **Dispatcher mode** -- Tracks both D&F agents (BA, Designer, Architect) and execution agents (Sr PM, Developer, PM) so the guard can distinguish responsible-agent writes from orchestrator writes.
 - **Execution loop** -- Manages unattended story execution with configurable iteration limits and automatic blocking detection.
+- **Deterministic next-action selection** -- Exposes `pvg loop next --json` so Codex/OpenCode dispatchers can ask the same source of truth what should happen next instead of re-implementing delivered/rejected/ready ordering in prompts.
+- **Story transitions** -- Exposes `pvg story deliver|accept|reject|verify-delivery|merge` so delivery, acceptance, rejection, and merge gating are shared across runtimes.
 - **Vault seeding** -- Writes agent prompts and behavioral notes to the Obsidian vault under an exclusive `vlt` lock to prevent concurrent write corruption.
 - **FSM governance** -- Enforces the configured `nd` status pipeline from project settings when enabled.
+
+Today the split is:
+
+- [paivot-graph](https://github.com/paivot-ai/paivot-graph): Claude Code plugin surface, hooks, marketplace packaging
+- [paivot-codex](https://github.com/paivot-ai/paivot-codex): Codex skills and prompts, including the `pvg` skill for deterministic workflow operations
+- [paivot-opencode](https://github.com/RamXX/paivot-opencode): OpenCode commands and agent manifests that call into `pvg`
+- `pvg`: shared deterministic workflow engine for the parts that should not live only in prompts
 
 ## Installation
 
@@ -157,6 +173,10 @@ dispatchers what to do next without re-implementing the workflow in prompts:
 
 In `--epic` mode it drains the priority epic first, then falls back to the rest of the backlog.
 
+The selector is intentionally additive. `paivot-graph` keeps its existing Claude hook flow,
+while Codex and OpenCode can reuse the same evaluation logic instead of carrying their own
+parallel copies of the queue-selection rules.
+
 ### Dispatcher mode
 
 ```bash
@@ -201,6 +221,7 @@ internal/
   guard/               Scope guard (system vault, project vault, dispatcher, FSM)
   lifecycle/           Session hooks (start, pre-compact, stop, end, user-prompt, subagent)
   loop/                Execution loop (setup, evaluate, cancel, snapshot, recover)
+  story/               Shared story transitions, delivery checks, merge path
   settings/            Project settings (YAML read/write)
   vaultcfg/            Vault discovery and configuration
 ```
