@@ -261,6 +261,30 @@ func TestCheckDispatcher_BashBlocksMutatingNDCommandFromCoordinator(t *testing.T
 	}
 }
 
+func TestCheckDispatcher_BashBlocksDependencyMutationFromCoordinator(t *testing.T) {
+	root, _ := setupDispatcher(t)
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd --json dep add PROJ-a1b2 PROJ-c3d4`},
+	}
+	result := CheckDispatcher(root, input)
+	if result.Allowed {
+		t.Fatal("expected coordinator nd dep add to be blocked in dispatcher mode")
+	}
+}
+
+func TestCheckDispatcher_BashBlocksDeleteFromCoordinator(t *testing.T) {
+	root, _ := setupDispatcher(t)
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd delete PROJ-a1b2`},
+	}
+	result := CheckDispatcher(root, input)
+	if result.Allowed {
+		t.Fatal("expected coordinator nd delete to be blocked in dispatcher mode")
+	}
+}
+
 func TestCheckDispatcher_BashAllowsMutatingNDCommandFromDeveloperWorktree(t *testing.T) {
 	_, worktree := setupDispatcher(t)
 	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:developer"); err != nil {
@@ -306,6 +330,22 @@ func TestCheckDispatcher_BashAllowsMutatingNDCommandFromSrPMWorktree(t *testing.
 	result := CheckDispatcher(worktree, input)
 	if !result.Allowed {
 		t.Fatalf("expected sr-pm worktree nd create allowed, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckDispatcher_BashAllowsDependencyMutationFromSrPMWorktree(t *testing.T) {
+	_, worktree := setupDispatcher(t)
+	if err := dispatcher.TrackAgent(worktree, "agent-1", "paivot-graph:sr-pm"); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd dep relate PROJ-a1b2 PROJ-c3d4`},
+	}
+	result := CheckDispatcher(worktree, input)
+	if !result.Allowed {
+		t.Fatalf("expected sr-pm worktree nd dep relate allowed, got blocked: %s", result.Reason)
 	}
 }
 

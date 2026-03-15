@@ -239,6 +239,13 @@ func TestParseNdStatusChange_WithVaultFlag(t *testing.T) {
 	}
 }
 
+func TestParseNdStatusChange_WithBooleanGlobalFlag(t *testing.T) {
+	ids, status, found := parseNdStatusChange("nd --json update PROJ-a3f8 --status=closed")
+	if !found || status != "closed" || len(ids) != 1 || ids[0] != "PROJ-a3f8" {
+		t.Errorf("unexpected: ids=%v status=%q found=%v", ids, status, found)
+	}
+}
+
 func TestParseNdStatusChange_ChainedCommand(t *testing.T) {
 	ids, status, found := parseNdStatusChange("echo hello && nd update PROJ-a3f8 --status=in_progress")
 	if !found || status != "in_progress" || len(ids) != 1 || ids[0] != "PROJ-a3f8" {
@@ -267,6 +274,13 @@ func TestParseNdContractLabelAdd_LabelsAdd(t *testing.T) {
 	}
 }
 
+func TestParseNdContractLabelAdd_WithBooleanGlobalFlag(t *testing.T) {
+	id, labels, found := parseNdContractLabelAdd("nd --json labels add PROJ-a3f8 accepted")
+	if !found || id != "PROJ-a3f8" || len(labels) != 1 || labels[0] != "accepted" {
+		t.Errorf("unexpected: id=%q labels=%v found=%v", id, labels, found)
+	}
+}
+
 func TestParseNdDeferCommand(t *testing.T) {
 	id, found := parseNdDeferCommand("nd defer PROJ-a3f8 --until 2026-03-20")
 	if !found || id != "PROJ-a3f8" {
@@ -274,8 +288,22 @@ func TestParseNdDeferCommand(t *testing.T) {
 	}
 }
 
+func TestParseNdDeferCommand_WithBooleanGlobalFlag(t *testing.T) {
+	id, found := parseNdDeferCommand("nd --json defer PROJ-a3f8 --until 2026-03-20")
+	if !found || id != "PROJ-a3f8" {
+		t.Errorf("unexpected: id=%q found=%v", id, found)
+	}
+}
+
 func TestParseNdUndeferCommand(t *testing.T) {
 	id, found := parseNdUndeferCommand("nd undefer PROJ-a3f8")
+	if !found || id != "PROJ-a3f8" {
+		t.Errorf("unexpected: id=%q found=%v", id, found)
+	}
+}
+
+func TestParseNdUndeferCommand_WithBooleanGlobalFlag(t *testing.T) {
+	id, found := parseNdUndeferCommand("nd --json undefer PROJ-a3f8")
 	if !found || id != "PROJ-a3f8" {
 		t.Errorf("unexpected: id=%q found=%v", id, found)
 	}
@@ -486,6 +514,14 @@ func TestCheckFSM_CloseAllowedFromInProgress(t *testing.T) {
 	r := CheckFSM(dir, "nd close PROJ-a1b2")
 	if !r.Allowed {
 		t.Errorf("expected allowed for in_progress -> closed, got blocked: %s", r.Reason)
+	}
+}
+
+func TestCheckFSM_CloseAllowedFromInProgressWithBooleanGlobalFlag(t *testing.T) {
+	dir := setupFSMProject(t, true, "PROJ-a1b2", "in_progress")
+	r := CheckFSM(dir, "nd --json close PROJ-a1b2")
+	if !r.Allowed {
+		t.Errorf("expected allowed for in_progress -> closed with --json, got blocked: %s", r.Reason)
 	}
 }
 

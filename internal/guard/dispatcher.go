@@ -16,7 +16,7 @@ var dfArtifacts = map[string]string{
 	"ARCHITECTURE.md": "architect",
 }
 
-var ndMutatingCommandRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*(create|update|close|reopen|defer|undefer|labels\s+(?:add|remove)|comments\s+add|link|unlink)\b`)
+var ndMutatingCommandRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*(create|update|close|reopen|delete|defer|undefer|labels\s+(?:add|remove)|comments\s+add|dep\s+(?:add|rm|relate|unrelate)|link|unlink)\b`)
 
 var dispatcherMutatingAgents = []string{
 	"paivot-graph:sr-pm",

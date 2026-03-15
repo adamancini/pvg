@@ -128,19 +128,19 @@ func ValidateTransition(wc WorkflowConfig, issueID, currentStatus, newStatus str
 }
 
 // ndUpdateRe matches: nd [global-flags] update <id> --status=<val> or --status <val>
-// Global flags like --vault <val> may appear between nd and the subcommand.
-var ndUpdateRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*update\s+(\S+)\s+.*?--status[= ](\S+)`)
+// Global flags like --vault <val> or --json may appear between nd and the subcommand.
+var ndUpdateRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*update\s+(\S+)\s+.*?--status[= ](\S+)`)
 
 // ndCloseRe matches: nd [global-flags] close <id> [<id>...]
-var ndCloseRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*close\s+(.+?)(?:\s*[;&|]|$)`)
+var ndCloseRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*close\s+(.+?)(?:\s*[;&|]|$)`)
 
 // ndLabelsAddRe matches: nd [global-flags] labels add <id> <label> [label...]
-var ndLabelsAddRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*labels\s+add\s+(\S+)\s+(.+?)(?:\s*[;&|]|$)`)
+var ndLabelsAddRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*labels\s+add\s+(\S+)\s+(.+?)(?:\s*[;&|]|$)`)
 
 // ndUpdateAddLabelRe matches: nd [global-flags] update <id> ... --add-label=<label> or --add-label <label>
-var ndUpdateAddLabelRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*update\s+(\S+)\s+.*?--add-label(?:=| )(\S+)`)
-var ndDeferRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*defer\s+(\S+)(?:\s|$)`)
-var ndUndeferRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+\s+\S+\s+)*undefer\s+(\S+)(?:\s|$)`)
+var ndUpdateAddLabelRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*update\s+(\S+)\s+.*?--add-label(?:=| )(\S+)`)
+var ndDeferRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*defer\s+(\S+)(?:\s|$)`)
+var ndUndeferRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?nd\s+(?:--\S+(?:\s+\S+)?\s+)*undefer\s+(\S+)(?:\s|$)`)
 
 // parseNdStatusChange extracts issue IDs and new status from an nd command.
 // Returns multiple IDs for "nd close id1 id2 ...".

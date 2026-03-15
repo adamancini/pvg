@@ -24,7 +24,7 @@ var trackedAgentTypes = map[string]bool{
 	"paivot-graph:pm":               true,
 }
 
-// SubagentStart tracks a BLT agent when it starts.
+// SubagentStart tracks a dispatcher-relevant subagent when it starts.
 // Silent output -- does not block agent launch.
 func SubagentStart() error {
 	var input subagentInput
@@ -45,7 +45,7 @@ func SubagentStart() error {
 	return nil
 }
 
-// SubagentStop untracks a BLT agent when it completes.
+// SubagentStop untracks a dispatcher-relevant subagent when it completes.
 // Silent output -- does not block agent completion.
 func SubagentStop() error {
 	var input subagentInput

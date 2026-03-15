@@ -24,7 +24,7 @@ pvg consolidates all of this into a single Go binary:
 
 - **Scope guard** -- Blocks direct writes to protected vault directories (methodology/, conventions/, decisions/, etc.), enforcing the proposal workflow. Allows `_inbox/` writes and all `vlt` commands.
 - **Session lifecycle** -- Loads vault context at session start, saves knowledge before compaction and stop, logs session end.
-- **Dispatcher mode** -- Tracks BLT agent (BA, Designer, Architect) lifecycle so the guard can distinguish agent writes from orchestrator writes.
+- **Dispatcher mode** -- Tracks both D&F agents (BA, Designer, Architect) and execution agents (Sr PM, Developer, PM) so the guard can distinguish responsible-agent writes from orchestrator writes.
 - **Execution loop** -- Manages unattended story execution with configurable iteration limits and automatic blocking detection.
 - **Vault seeding** -- Writes agent prompts and behavioral notes to the Obsidian vault under an exclusive `vlt` lock to prevent concurrent write corruption.
 - **FSM governance** -- Enforces the configured `nd` status pipeline from project settings when enabled.
@@ -83,8 +83,8 @@ Called by Claude Code via `hooks.json`. Each reads JSON from stdin and writes st
 | `pvg hook stop` | Stop | Capture session knowledge before ending |
 | `pvg hook session-end` | SessionEnd | Log session end, clean up dispatcher state |
 | `pvg hook user-prompt` | UserPromptSubmit | Auto-detect and manage dispatcher mode |
-| `pvg hook subagent-start` | SubagentStart | Track BLT agent activation |
-| `pvg hook subagent-stop` | SubagentStop | Track BLT agent deactivation |
+| `pvg hook subagent-start` | SubagentStart | Track dispatcher-relevant agent activation (BA, Designer, Architect, Sr PM, Developer, PM) |
+| `pvg hook subagent-stop` | SubagentStop | Track dispatcher-relevant agent deactivation |
 
 ### Scope guard
 
@@ -157,7 +157,7 @@ cmd/pvg/
   main.go              CLI entry point, argument parsing, command dispatch
 
 internal/
-  dispatcher/          Dispatcher mode state management (BLT agent tracking)
+  dispatcher/          Dispatcher mode state management (D&F + execution agent tracking)
   governance/          Vault seeding with vlt lock
   guard/               Scope guard (system vault, project vault, dispatcher, FSM)
   lifecycle/           Session hooks (start, pre-compact, stop, end, user-prompt, subagent)
