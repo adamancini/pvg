@@ -339,6 +339,7 @@ func runND(args []string) error {
 	}
 
 	ndArgs := append([]string{"--vault", vaultDir}, args...)
+	// #nosec G702 -- intentional argv-based passthrough to nd; no shell interpolation.
 	cmd := exec.Command("nd", ndArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
