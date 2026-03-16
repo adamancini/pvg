@@ -292,7 +292,7 @@ type: methodology
 scope: system
 project: paivot
 stack: [claude-code]
-domain: developer-tools
+domain: dev-tools-workflow
 status: active
 created: %s
 ---
@@ -327,7 +327,7 @@ type: convention
 scope: system
 project: paivot-graph
 stack: [claude-code, obsidian]
-domain: developer-tools
+domain: dev-tools-knowledge
 status: active
 created: %s
 ---
@@ -348,7 +348,7 @@ type: convention
 scope: system
 project: paivot-graph
 stack: [claude-code, obsidian]
-domain: developer-tools
+domain: dev-tools-workflow
 status: active
 created: %s
 ---
@@ -538,7 +538,7 @@ type: convention
 scope: system
 project: paivot-graph
 stack: [claude-code, obsidian]
-domain: developer-tools
+domain: dev-tools-workflow
 status: active
 created: %s
 ---
@@ -591,7 +591,7 @@ type: convention
 scope: system
 project: paivot-graph
 stack: [claude-code, obsidian]
-domain: developer-tools
+domain: dev-tools-workflow
 status: active
 created: %s
 ---
