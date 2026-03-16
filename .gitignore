@@ -7,3 +7,14 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+
+# Paivot runtime state (managed by pvg)
+.vault/issues/
+.vault/.nd.yaml
+.vault/.nd-shared.yaml
+.vault/.piv-loop-state.json
+.vault/.piv-loop-snapshot.json
+.vault/.dispatcher-state.json
+.vault/.vlt.lock
+.vault/.guard/
+.vault/knowledge
