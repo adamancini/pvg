@@ -135,6 +135,89 @@ Trailing note
 	}
 }
 
+func TestTransitionAcceptWarnsWhenNextStoryCannotStart(t *testing.T) {
+	repo := t.TempDir()
+	vault := filepath.Join(t.TempDir(), "nd-vault")
+	if err := os.MkdirAll(vault, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vault, ".nd.yaml"), []byte("vault: ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("ND_VAULT_DIR", vault); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	logPath := filepath.Join(t.TempDir(), "calls.jsonl")
+	oldExec := execCommand
+	defer func() { execCommand = oldExec }()
+	execCommand = helperExecCommand(t, logPath)
+
+	t.Setenv("STORY_HELPER_FAIL_MATCH", " update NOPE --status=in_progress")
+	t.Setenv("STORY_HELPER_FAIL_OUTPUT", "next story cannot start")
+
+	msg, err := Transition(repo, "accept", "PROJ-a1b2", TransitionOptions{NextStory: "NOPE"})
+	if err != nil {
+		t.Fatalf("Transition() error: %v", err)
+	}
+	if !strings.Contains(msg, "warning: accepted story closed successfully, but could not start next story NOPE") {
+		t.Fatalf("Transition() message = %q, want warning about next story", msg)
+	}
+
+	joined := flattenCalls(readCalls(t, logPath))
+	wantSubstrings := []string{
+		"show PROJ-a1b2",
+		"show NOPE",
+		"close PROJ-a1b2 --reason=Accepted via pvg story accept",
+		"labels add PROJ-a1b2 accepted",
+		"update PROJ-a1b2 --append-notes",
+		"update NOPE --status=in_progress",
+		"doctor --fix",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected call containing %q, got:\n%s", want, joined)
+		}
+	}
+}
+
+func TestTransitionAcceptFailsBeforeMutationWhenNextStoryMissing(t *testing.T) {
+	repo := t.TempDir()
+	vault := filepath.Join(t.TempDir(), "nd-vault")
+	if err := os.MkdirAll(vault, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vault, ".nd.yaml"), []byte("vault: ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("ND_VAULT_DIR", vault); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	logPath := filepath.Join(t.TempDir(), "calls.jsonl")
+	oldExec := execCommand
+	defer func() { execCommand = oldExec }()
+	execCommand = helperExecCommand(t, logPath)
+
+	t.Setenv("STORY_HELPER_FAIL_MATCH", " show NOPE")
+	t.Setenv("STORY_HELPER_FAIL_OUTPUT", "story not found")
+
+	_, err := Transition(repo, "accept", "PROJ-a1b2", TransitionOptions{NextStory: "NOPE"})
+	if err == nil {
+		t.Fatal("expected next story validation error")
+	}
+	if !strings.Contains(err.Error(), "next story not found: NOPE") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	joined := flattenCalls(readCalls(t, logPath))
+	if strings.Contains(joined, "close PROJ-a1b2") {
+		t.Fatalf("close should not run when next story validation fails:\n%s", joined)
+	}
+}
+
 func TestMergeDefaultsToMain(t *testing.T) {
 	repo, remote := initGitRepo(t)
 	vault := filepath.Join(t.TempDir(), "nd-vault")
@@ -218,6 +301,14 @@ func TestHelperProcess(t *testing.T) {
 	defer f.Close()
 	if err := json.NewEncoder(f).Encode(call); err != nil {
 		panic(err)
+	}
+
+	joined := " " + call.Name + " " + strings.Join(call.Args, " ")
+	if failMatch := os.Getenv("STORY_HELPER_FAIL_MATCH"); failMatch != "" && strings.Contains(joined, failMatch) {
+		if msg := os.Getenv("STORY_HELPER_FAIL_OUTPUT"); msg != "" {
+			_, _ = os.Stderr.WriteString(msg)
+		}
+		os.Exit(1)
 	}
 
 	if call.Name == "nd" && strings.Contains(strings.Join(call.Args, " "), " show ") {

@@ -2,6 +2,7 @@
 package settings
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -113,6 +114,10 @@ func showSetting(path, key string) error {
 
 func setSettings(projectRoot, path string, args []string) error {
 	settings := loadSettings(path)
+	originalContent, hadOriginalFile, err := readOptionalFile(path)
+	if err != nil {
+		return err
+	}
 
 	workflowChanged := false
 	for _, arg := range args {
@@ -140,7 +145,12 @@ func setSettings(projectRoot, path string, args []string) error {
 	}
 
 	if workflowChanged {
-		syncNdConfig(projectRoot, settings)
+		if err := syncNdConfig(projectRoot, settings); err != nil {
+			if restoreErr := restoreSettingsFile(path, originalContent, hadOriginalFile); restoreErr != nil {
+				return fmt.Errorf("sync nd workflow settings: %w (also failed to restore settings file: %v)", err, restoreErr)
+			}
+			return fmt.Errorf("sync nd workflow settings: %w", err)
+		}
 	}
 
 	return nil
@@ -193,6 +203,27 @@ func writeSettings(path string, settings map[string]string) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }
 
+func readOptionalFile(path string) ([]byte, bool, error) {
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return data, true, nil
+	}
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	return nil, false, fmt.Errorf("read settings file %s: %w", path, err)
+}
+
+func restoreSettingsFile(path string, content []byte, existed bool) error {
+	if existed {
+		return os.WriteFile(path, content, 0644)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // LoadFile reads and parses the settings from a file path.
 // Returns a map of key-value pairs (empty if file is missing or unreadable).
 func LoadFile(path string) map[string]string {
@@ -204,11 +235,11 @@ func Default(key string) string {
 	return defaults[key]
 }
 
-// syncNdConfig propagates workflow settings to nd. Non-fatal on failure.
-func syncNdConfig(projectRoot string, settings map[string]string) {
+// syncNdConfig propagates workflow settings to nd.
+func syncNdConfig(projectRoot string, settings map[string]string) error {
 	vaultDir, err := ndvault.Resolve(projectRoot)
 	if err != nil {
-		return
+		return err
 	}
 
 	enabled := settings["workflow.fsm"] == "true"
@@ -218,18 +249,39 @@ func syncNdConfig(projectRoot string, settings map[string]string) {
 		rules := settingOrDefault(settings, "workflow.exit_rules")
 
 		if custom != "" {
-			_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.custom", custom).Run()
+			if err := runNDConfigSet(vaultDir, "status.custom", custom); err != nil {
+				return err
+			}
 		}
 		if sequence != "" {
-			_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.sequence", sequence).Run()
+			if err := runNDConfigSet(vaultDir, "status.sequence", sequence); err != nil {
+				return err
+			}
 		}
 		if rules != "" {
-			_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.exit_rules", rules).Run()
+			if err := runNDConfigSet(vaultDir, "status.exit_rules", rules); err != nil {
+				return err
+			}
 		}
-		_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.fsm", "true").Run()
+		return runNDConfigSet(vaultDir, "status.fsm", "true")
 	} else {
-		_ = execCommand("nd", "--vault", vaultDir, "config", "set", "status.fsm", "false").Run()
+		return runNDConfigSet(vaultDir, "status.fsm", "false")
 	}
+}
+
+func runNDConfigSet(vaultDir, key, value string) error {
+	cmd := execCommand("nd", "--vault", vaultDir, "config", "set", key, value)
+	var stderr bytes.Buffer
+	cmd.Stdout = &bytes.Buffer{}
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("nd config set %s=%s: %s", key, value, msg)
+		}
+		return fmt.Errorf("nd config set %s=%s: %w", key, value, err)
+	}
+	return nil
 }
 
 func settingOrDefault(settings map[string]string, key string) string {

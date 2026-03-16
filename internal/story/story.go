@@ -68,23 +68,32 @@ func Transition(projectRoot, action, storyID string, opts TransitionOptions) (st
 			return "", err
 		}
 	case "accept":
-		_ = runND(projectRoot, "labels", "rm", storyID, "delivered")
-		_ = runND(projectRoot, "labels", "rm", storyID, "rejected")
+		if opts.NextStory != "" {
+			if _, err := outputND(projectRoot, "show", opts.NextStory); err != nil {
+				return "", fmt.Errorf("next story not found: %s", opts.NextStory)
+			}
+		}
+		if err := runND(projectRoot, "close", storyID, "--reason="+defaultString(opts.Reason, "Accepted via pvg story accept")); err != nil {
+			return "", err
+		}
 		if err := runND(projectRoot, "labels", "add", storyID, "accepted"); err != nil {
 			return "", err
 		}
-		closeArgs := []string{"close", storyID, "--reason=" + defaultString(opts.Reason, "Accepted via pvg story accept")}
-		if opts.NextStory != "" {
-			closeArgs = append(closeArgs, "--start="+opts.NextStory)
-		}
-		if err := runND(projectRoot, closeArgs...); err != nil {
-			return "", err
-		}
+		_ = runND(projectRoot, "labels", "rm", storyID, "delivered")
+		_ = runND(projectRoot, "labels", "rm", storyID, "rejected")
 		if err := appendContract(projectRoot, storyID, "accepted",
 			fmt.Sprintf("PM closeout applied via pvg story accept on %s.", today()),
 			"[x] Story closed after accepted label was applied.",
 		); err != nil {
 			return "", err
+		}
+		if opts.NextStory != "" {
+			if err := runND(projectRoot, "update", opts.NextStory, "--status=in_progress"); err != nil {
+				if runDoctorErr := runND(projectRoot, "doctor", "--fix"); runDoctorErr != nil {
+					return "", fmt.Errorf("accepted %s but could not start next story %s: %v (doctor also failed: %v)", storyID, opts.NextStory, err, runDoctorErr)
+				}
+				return fmt.Sprintf("OK: accept %s using shared nd vault %s (warning: accepted story closed successfully, but could not start next story %s: %v)", storyID, vaultDir, opts.NextStory, err), nil
+			}
 		}
 	case "reject":
 		if err := runND(projectRoot, "update", storyID, "--status=open"); err != nil {

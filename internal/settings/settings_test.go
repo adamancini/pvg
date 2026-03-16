@@ -322,3 +322,55 @@ func TestSyncNdConfig_FallsBackToDefaults(t *testing.T) {
 		t.Fatalf("unexpected nd config calls:\n got: %#v\nwant: %#v", calls, want)
 	}
 }
+
+func TestRunRestoresSettingsFileWhenNdSyncFails(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := filepath.Join(dir, ".vault", "knowledge", ".settings.yaml")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "workflow.fsm: false\n"
+	if err := os.WriteFile(settingsPath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	override := filepath.Join(t.TempDir(), "nd-vault")
+	if err := os.Setenv("ND_VAULT_DIR", override); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("ND_VAULT_DIR") }()
+
+	oldExec := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		if len(args) >= 6 && args[2] == "config" && args[3] == "set" && args[4] == "status.custom" {
+			return exec.Command("sh", "-c", "echo invalid custom status >&2; exit 1")
+		}
+		return exec.Command("true")
+	}
+	defer func() { execCommand = oldExec }()
+
+	err = Run([]string{"workflow.fsm=true", "workflow.custom_statuses=Bad Name"})
+	if err == nil {
+		t.Fatal("expected Run to fail when nd sync rejects workflow config")
+	}
+	if !strings.Contains(err.Error(), "invalid custom status") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, readErr := os.ReadFile(settingsPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if got := string(data); got != original {
+		t.Fatalf("settings file not restored after sync failure:\n got: %q\nwant: %q", got, original)
+	}
+}

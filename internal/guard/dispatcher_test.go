@@ -261,6 +261,18 @@ func TestCheckDispatcher_BashBlocksMutatingNDCommandFromCoordinator(t *testing.T
 	}
 }
 
+func TestCheckDispatcher_BashBlocksLabelsRmFromCoordinator(t *testing.T) {
+	root, _ := setupDispatcher(t)
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `nd labels rm PROJ-a1b2 delivered`},
+	}
+	result := CheckDispatcher(root, input)
+	if result.Allowed {
+		t.Fatal("expected coordinator nd labels rm to be blocked in dispatcher mode")
+	}
+}
+
 func TestCheckDispatcher_BashBlocksDependencyMutationFromCoordinator(t *testing.T) {
 	root, _ := setupDispatcher(t)
 	input := HookInput{
