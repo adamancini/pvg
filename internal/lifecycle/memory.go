@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/vlt"
 
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
 )

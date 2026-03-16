@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/vlt"
 )
 
 const VaultName = "Claude"

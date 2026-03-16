@@ -47,7 +47,7 @@ Today the split is:
 
 - [paivot-graph](https://github.com/paivot-ai/paivot-graph): Claude Code plugin surface, hooks, marketplace packaging
 - [paivot-codex](https://github.com/paivot-ai/paivot-codex): Codex skills and prompts, including the `pvg` skill for deterministic workflow operations
-- [paivot-opencode](https://github.com/RamXX/paivot-opencode): OpenCode commands and agent manifests that call into `pvg`
+- [paivot-opencode](https://github.com/paivot-ai/paivot-opencode): OpenCode commands and agent manifests that call into `pvg`
 - `pvg`: shared deterministic workflow engine for the parts that should not live only in prompts
 
 ## Installation
@@ -230,7 +230,7 @@ internal/
 
 | Dependency | Purpose |
 |-----------|---------|
-| [vlt](https://github.com/RamXX/vlt) | Obsidian vault operations (library import) |
+| [vlt](https://github.com/paivot-ai/vlt) | Obsidian vault operations (library import) |
 
 ## Development
 

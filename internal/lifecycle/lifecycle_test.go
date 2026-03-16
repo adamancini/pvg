@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/vlt"
 )
 
 func TestDetectProject_FallsBackToBasename(t *testing.T) {

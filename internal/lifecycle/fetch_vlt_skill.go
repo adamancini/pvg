@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	vltSkillRepo    = "RamXX/vlt"
+	vltSkillRepo    = "paivot-ai/vlt"
 	vltSkillVersion = "v0.9.0"
 	vltSkillSHA256  = "cf91fe6ea74b97d3da982c3ee402b8df2abeedc7725a4324b74f2da04d4fa888"
 	vltSkillDestDir = ".claude/skills/vlt-skill"
