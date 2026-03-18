@@ -10,6 +10,16 @@ import (
 	"testing"
 )
 
+func TestDefaultSoloDev(t *testing.T) {
+	val, ok := defaults["workflow.solo_dev"]
+	if !ok {
+		t.Fatal("workflow.solo_dev missing from defaults")
+	}
+	if val != "true" {
+		t.Fatalf("expected workflow.solo_dev default 'true', got %q", val)
+	}
+}
+
 func TestLoadSettings_NoFile(t *testing.T) {
 	s := loadSettings("/nonexistent/.settings.yaml")
 	if len(s) != 0 {

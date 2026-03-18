@@ -27,6 +27,7 @@ var defaults = map[string]string{
 	"default_scope":                "system",
 	"proposal_expiry_days":         "30",
 	"auto_init_project_vault":      "ask",
+	"workflow.solo_dev":             "true",
 	"workflow.fsm":                 "false",
 	"workflow.sequence":            "open,in_progress,closed",
 	"workflow.exit_rules":          "blocked:open,in_progress;deferred:open,in_progress",
