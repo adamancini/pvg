@@ -584,6 +584,128 @@ func TestIsCommentOnly(t *testing.T) {
 	}
 }
 
+// E2e existence checks
+
+func TestCheckE2e_NoE2eTests(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "main.go", "package main\nfunc main() {}\n")
+	writeTempFile(t, dir, "main_test.go", "package main\nimport \"testing\"\nfunc TestMain(t *testing.T) {}\n")
+
+	result, err := CheckE2e(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Found {
+		t.Error("expected no e2e tests found")
+	}
+	if result.Count != 0 {
+		t.Errorf("expected 0, got %d", result.Count)
+	}
+}
+
+func TestCheckE2e_FindsE2eDir(t *testing.T) {
+	dir := t.TempDir()
+	e2eDir := filepath.Join(dir, "test", "e2e")
+	_ = os.MkdirAll(e2eDir, 0755)
+	writeTempFile(t, e2eDir, "login_test.go", "package e2e\nfunc TestLogin() {}\n")
+
+	result, err := CheckE2e(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found {
+		t.Error("expected e2e tests found in e2e/ directory")
+	}
+	if result.Count != 1 {
+		t.Errorf("expected 1, got %d", result.Count)
+	}
+}
+
+func TestCheckE2e_FindsE2eFilename(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "auth_e2e_test.go", "package auth\nfunc TestE2e() {}\n")
+
+	result, err := CheckE2e(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found {
+		t.Error("expected e2e tests found by filename pattern")
+	}
+}
+
+func TestCheckE2e_FindsE2eSpecPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "login.e2e.spec.ts", "describe('login', () => {})\n")
+
+	result, err := CheckE2e(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found {
+		t.Error("expected e2e tests found by .e2e.spec pattern")
+	}
+}
+
+func TestCheckE2e_SkipsVendor(t *testing.T) {
+	dir := t.TempDir()
+	vendorE2e := filepath.Join(dir, "vendor", "e2e")
+	_ = os.MkdirAll(vendorE2e, 0755)
+	writeTempFile(t, vendorE2e, "test.go", "package e2e\n")
+
+	result, err := CheckE2e(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Found {
+		t.Error("should not find e2e tests in vendor/")
+	}
+}
+
+func TestFormatE2eText_Found(t *testing.T) {
+	r := &E2eResult{Found: true, Count: 2, Files: []string{"test/e2e/a.go", "test/e2e/b.go"}}
+	text := FormatE2eText(r)
+	if !contains(text, "PASSED") {
+		t.Error("expected PASSED")
+	}
+	if !contains(text, "2 e2e test files") {
+		t.Error("expected count in output")
+	}
+}
+
+func TestFormatE2eText_NotFound(t *testing.T) {
+	r := &E2eResult{Found: false, Count: 0}
+	text := FormatE2eText(r)
+	if !contains(text, "FAILED") {
+		t.Error("expected FAILED")
+	}
+}
+
+func TestIsE2eFile(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{"test/e2e/login_test.go", true},
+		{"e2e/smoke_test.py", true},
+		{"tests/end-to-end/flow.spec.ts", true},
+		{"auth_e2e_test.go", true},
+		{"login.e2e.spec.ts", true},
+		{"test_e2e_auth.py", true},
+		{"e2e_test.go", true},
+		{"auth_test.go", false},
+		{"main.go", false},
+		{"auth.spec.ts", false},
+	}
+
+	for _, tt := range tests {
+		got := isE2eFile(tt.path)
+		if got != tt.expected {
+			t.Errorf("isE2eFile(%q) = %v, want %v", tt.path, got, tt.expected)
+		}
+	}
+}
+
 // Helpers
 
 func writeTempFile(t *testing.T, dir, name, content string) string {

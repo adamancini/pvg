@@ -303,6 +303,90 @@ func isCommentOnly(trimmed, ext string) bool {
 	return false
 }
 
+// E2eResult is the output of an e2e existence check.
+type E2eResult struct {
+	Found bool     `json:"found"`
+	Count int      `json:"count"`
+	Files []string `json:"files"`
+}
+
+// e2e directory names (case-insensitive match).
+var e2eDirs = []string{"e2e", "end-to-end", "end_to_end"}
+
+// e2eFilePattern matches filenames containing "e2e" alongside a test indicator.
+var e2eFilePattern = regexp.MustCompile(`(?i)(e2e.*test|test.*e2e|e2e.*spec|spec.*e2e|_e2e_|\.e2e\.)`)
+
+// CheckE2e scans the given root directory for e2e test files.
+// It looks for: (1) files in directories named e2e/ (any depth),
+// (2) source files whose name matches common e2e test patterns.
+func CheckE2e(root string) (*E2eResult, error) {
+	if root == "" {
+		root = "."
+	}
+
+	result := &E2eResult{}
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if info.IsDir() {
+			if skipDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !sourceExtensions[filepath.Ext(path)] {
+			return nil
+		}
+
+		if isE2eFile(path) {
+			result.Files = append(result.Files, path)
+			result.Count++
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("scan for e2e tests: %w", err)
+	}
+
+	result.Found = result.Count > 0
+	return result, nil
+}
+
+// FormatE2eText returns a human-readable report for the e2e check.
+func FormatE2eText(r *E2eResult) string {
+	if r.Found {
+		s := fmt.Sprintf("E2E CHECK: PASSED (%d e2e test files found)\n", r.Count)
+		for _, f := range r.Files {
+			s += fmt.Sprintf("  %s\n", f)
+		}
+		return s
+	}
+	return "E2E CHECK: FAILED (0 e2e test files found)\n" +
+		"  No files found in e2e/ directories or matching e2e test naming patterns.\n" +
+		"  Every epic requires e2e tests exercising the full system from the user's perspective.\n"
+}
+
+// isE2eFile checks if a file is an e2e test based on directory or filename.
+func isE2eFile(path string) bool {
+	// Check if any directory component is an e2e directory
+	for _, part := range strings.Split(filepath.Dir(path), string(filepath.Separator)) {
+		lower := strings.ToLower(part)
+		for _, e2eDir := range e2eDirs {
+			if lower == e2eDir {
+				return true
+			}
+		}
+	}
+
+	// Check filename pattern
+	return e2eFilePattern.MatchString(filepath.Base(path))
+}
+
 // truncate shortens a string to maxLen characters.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {

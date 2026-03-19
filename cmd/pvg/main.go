@@ -986,6 +986,7 @@ func loopRecover(cwd string, args []string) error {
 func runVerify(args []string) error {
 	opts := verify.DefaultOptions()
 	format := "text"
+	checkE2e := false
 	var paths []string
 
 	for i := 0; i < len(args); i++ {
@@ -999,6 +1000,7 @@ Flags:
   --format text|json    Output format (default: text)
   --min-lines N         Minimum lines of code for substance check (default: 10)
   --include-tests       Include test files in scan (default: skip them)
+  --check-e2e           Check that e2e test files exist (exit 1 if none found)
   --help, -h            Show this help
 
 If no paths given, scans the current directory recursively.
@@ -1006,6 +1008,8 @@ Skips test files, vendor/, node_modules/, .git/, .vault/ by default.
 
 Exit code 0 if clean, 1 if issues found.`)
 			return nil
+		case "--check-e2e":
+			checkE2e = true
 		case "--format":
 			if i+1 >= len(args) {
 				return fmt.Errorf("--format requires an argument (text or json)")
@@ -1033,6 +1037,32 @@ Exit code 0 if clean, 1 if issues found.`)
 			}
 			paths = append(paths, args[i])
 		}
+	}
+
+	// E2e existence check mode
+	if checkE2e {
+		root := "."
+		if len(paths) > 0 {
+			root = paths[0]
+		}
+		e2eResult, err := verify.CheckE2e(root)
+		if err != nil {
+			return err
+		}
+		switch format {
+		case "json":
+			j, err := json.MarshalIndent(e2eResult, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(j))
+		default:
+			fmt.Print(verify.FormatE2eText(e2eResult))
+		}
+		if !e2eResult.Found {
+			os.Exit(1)
+		}
+		return nil
 	}
 
 	result, err := verify.Scan(paths, opts)
