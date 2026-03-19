@@ -69,7 +69,7 @@ func TestEvaluateNext_EpicMode_EpicCompleteWhenAllClosed(t *testing.T) {
 		// Epic children: all closed (empty result)
 		"children PROJ-epic --json": `[]`,
 		// AutoSelectEpic: another epic exists
-		"list --type epic --status !closed --sort priority --json": `[{"ID":"PROJ-epic","Type":"epic"},{"ID":"PROJ-e2","Title":"Next Epic","Type":"epic"}]`,
+		"list --type epic --status !closed --sort priority --json":                            `[{"ID":"PROJ-epic","Type":"epic"},{"ID":"PROJ-e2","Title":"Next Epic","Type":"epic"}]`,
 		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e2": `[]`,
 		"list --status open --label rejected --sort priority --json --parent PROJ-e2":         `[]`,
 		"ready --sort priority --json --parent PROJ-e2":                                       `[{"ID":"PROJ-s2","Title":"Story Two","Status":"ready"}]`,
@@ -92,7 +92,7 @@ func TestEvaluateNext_EpicMode_EpicCompleteLastEpic(t *testing.T) {
 		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[]`,
 		"list --status open --label rejected --sort priority --json --parent PROJ-epic":         `[]`,
 		"ready --sort priority --json --parent PROJ-epic":                                       `[]`,
-		"children PROJ-epic --json":                                                             `[]`,
+		"children PROJ-epic --json": `[]`,
 		// No other epics
 		"list --type epic --status !closed --sort priority --json": `[{"ID":"PROJ-epic","Type":"epic"}]`,
 		// PROJ-epic is excluded by AutoSelectEpic, so no match

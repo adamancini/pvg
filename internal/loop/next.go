@@ -23,16 +23,16 @@ type NextAction struct {
 
 // NextResult is the host-agnostic orchestration decision derived from nd state.
 type NextResult struct {
-	Mode        string      `json:"mode"`
-	TargetEpic  string      `json:"target_epic,omitempty"`
-	ActiveLoop  bool        `json:"active_loop"`
-	ScopeSource string      `json:"scope_source,omitempty"`
-	Decision    string      `json:"decision"`
-	Reason      string      `json:"reason"`
-	Counts      WorkCounts  `json:"counts"`
-	Next        *NextAction `json:"next,omitempty"`
-	NextEpic    string      `json:"next_epic,omitempty"`    // populated on "rotate" decision
-	NextEpicTitle string    `json:"next_epic_title,omitempty"`
+	Mode          string      `json:"mode"`
+	TargetEpic    string      `json:"target_epic,omitempty"`
+	ActiveLoop    bool        `json:"active_loop"`
+	ScopeSource   string      `json:"scope_source,omitempty"`
+	Decision      string      `json:"decision"`
+	Reason        string      `json:"reason"`
+	Counts        WorkCounts  `json:"counts"`
+	Next          *NextAction `json:"next,omitempty"`
+	NextEpic      string      `json:"next_epic,omitempty"` // populated on "rotate" decision
+	NextEpicTitle string      `json:"next_epic_title,omitempty"`
 }
 
 // EvaluateNext selects the next orchestration step without mutating state.
