@@ -17,15 +17,17 @@ const stateFile = ".piv-loop-state.json"
 
 // State represents the persistent loop execution state.
 type State struct {
-	Active              bool   `json:"active"`
-	Mode                string `json:"mode"`                  // "all" or "epic"
-	TargetEpic          string `json:"target_epic,omitempty"` // epic ID when mode=epic
-	Iteration           int    `json:"iteration"`
-	MaxIterations       int    `json:"max_iterations"` // 0 = unlimited
-	ConsecutiveWaits    int    `json:"consecutive_waits"`
-	MaxConsecutiveWaits int    `json:"max_consecutive_waits"`
-	WaitIterations      int    `json:"wait_iterations"`
-	StartedAt           string `json:"started_at"`
+	Active              bool     `json:"active"`
+	Mode                string   `json:"mode"`                  // "all" or "epic"
+	TargetEpic          string   `json:"target_epic,omitempty"` // epic ID when mode=epic
+	AutoRotate          bool     `json:"auto_rotate"`           // true: rotate to next epic on completion
+	CompletedEpics      []string `json:"completed_epics,omitempty"`
+	Iteration           int      `json:"iteration"`
+	MaxIterations       int      `json:"max_iterations"` // 0 = unlimited
+	ConsecutiveWaits    int      `json:"consecutive_waits"`
+	MaxConsecutiveWaits int      `json:"max_consecutive_waits"`
+	WaitIterations      int      `json:"wait_iterations"`
+	StartedAt           string   `json:"started_at"`
 }
 
 // NewState creates a new loop state with sensible defaults.

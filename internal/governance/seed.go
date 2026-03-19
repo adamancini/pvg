@@ -411,17 +411,22 @@ You NEVER:
   - Write source code, tests, or story files yourself
   - Make architectural or design decisions yourself
   - Skip agents to "save time"
+  - Query nd globally for dispatch decisions (use pvg loop next --json)
 
 If you catch yourself about to write a file that an agent should produce, STOP.
 Spawn the appropriate agent instead.
 
-Execution priority is structural, not remembered:
-  1. Delivered work goes to PM-Acceptor
-  2. Rejected work goes back to Developer
-  3. Ready work goes to Developer
-  4. If a priority epic is active, drain it first, then continue with the rest of the backlog
+Execution priority is structural, enforced by pvg loop next --json:
+  1. The loop drains ONE EPIC AT A TIME (default behavior since pvg v1.44.0)
+  2. Within the epic: delivered -> rejected -> ready (priority order)
+  3. All parallelization happens INSIDE the current epic, not across epics
+  4. Epic completion triggers a gate: e2e tests + Anchor review + merge to main
+  5. After the gate passes, the loop auto-rotates to the next highest-priority epic
+  6. No cherry-picking. No cross-epic work. The epic is a containment boundary.
 
-Do not re-implement that ordering yourself. Ask pvg loop next --json.
+Do not re-implement that ordering yourself. Run pvg loop next --json each iteration.
+It returns a JSON decision (act, epic_complete, epic_blocked, wait, rotate, complete)
+that tells you exactly what to do next.
 
 ## D&F ORCHESTRATION
 

@@ -193,9 +193,15 @@ func BuildContinuationPrompt(state *loop.State, decision *loop.StopDecision, max
 		decision.Reason,
 	)
 
+	// Always show the current epic context.
+	epicCtx := ""
+	if state.TargetEpic != "" {
+		epicCtx = fmt.Sprintf("Current epic: %s (auto-rotate=%v).\n", state.TargetEpic, state.AutoRotate)
+	}
+
 	// Wait-like: nothing ready to spawn, agents are running
 	if wc.Ready == 0 && wc.InProgress > 0 {
-		prompt := header
+		prompt := header + epicCtx
 		if wc.Delivered > 0 {
 			prompt += fmt.Sprintf("\n%d delivered stories await PM review -- spawn PM-Acceptor.\n", wc.Delivered)
 		} else {
@@ -205,19 +211,15 @@ func BuildContinuationPrompt(state *loop.State, decision *loop.StopDecision, max
 	}
 
 	// Actionable ready work exists
-	prompt := header + "\nContinue:\n"
+	prompt := header + epicCtx + "\nContinue. Run `pvg loop next --json` to get the next action.\n"
 	if wc.Delivered > 0 {
 		prompt += fmt.Sprintf("- PM-Acceptor: %d delivered\n", wc.Delivered)
 	}
 	if wc.Ready > 0 {
 		prompt += fmt.Sprintf("- Developer: %d ready\n", wc.Ready)
 	}
-	prompt += "\nIf agents already cover all ready stories, wait silently.\n"
-	prompt += "Concurrency: max 2 dev, max 1 PM, max 3 total. Dispatcher-only.\n"
-
-	if state.Mode == "epic" && state.TargetEpic != "" {
-		prompt += fmt.Sprintf("Priority epic: %s. Continue with the rest of the backlog once it is empty.\n", state.TargetEpic)
-	}
+	prompt += "\nAll work is scoped to the current epic. Do NOT query nd globally for dispatch.\n"
+	prompt += "Concurrency: within current epic only. Max 2 dev, max 1 PM, max 3 total. Dispatcher-only.\n"
 
 	return prompt
 }

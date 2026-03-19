@@ -56,6 +56,8 @@ func TestStateJSON_RoundTrip(t *testing.T) {
 		Active:              true,
 		Mode:                "epic",
 		TargetEpic:          "TEST-abc",
+		AutoRotate:          true,
+		CompletedEpics:      []string{"TEST-prev"},
 		Iteration:           5,
 		MaxIterations:       50,
 		ConsecutiveWaits:    2,
@@ -94,6 +96,12 @@ func TestStateJSON_RoundTrip(t *testing.T) {
 	}
 	if restored.WaitIterations != original.WaitIterations {
 		t.Errorf("wait_iterations mismatch: %d vs %d", restored.WaitIterations, original.WaitIterations)
+	}
+	if restored.AutoRotate != original.AutoRotate {
+		t.Errorf("auto_rotate mismatch: %v vs %v", restored.AutoRotate, original.AutoRotate)
+	}
+	if len(restored.CompletedEpics) != len(original.CompletedEpics) {
+		t.Errorf("completed_epics length mismatch: %d vs %d", len(restored.CompletedEpics), len(original.CompletedEpics))
 	}
 }
 

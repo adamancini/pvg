@@ -31,11 +31,20 @@ type NextResult struct {
 	Reason      string      `json:"reason"`
 	Counts      WorkCounts  `json:"counts"`
 	Next        *NextAction `json:"next,omitempty"`
+	NextEpic    string      `json:"next_epic,omitempty"`    // populated on "rotate" decision
+	NextEpicTitle string    `json:"next_epic_title,omitempty"`
 }
 
 // EvaluateNext selects the next orchestration step without mutating state.
-// It respects "priority epic" mode by draining the target epic first, then
-// falling back to the rest of the backlog once the target epic is empty.
+//
+// In epic mode (the default), the loop is CONTAINED to the target epic:
+//   - If the epic has actionable work: return it
+//   - If the epic has only in-progress work: wait (don't leave the epic)
+//   - If all stories are closed: epic_complete (run the completion gate)
+//   - If all remaining stories are blocked: epic_blocked (escalate)
+//   - After epic completion: rotate to the next highest-priority epic
+//
+// In "all" mode (legacy escape hatch), behavior is unchanged: global priority queue.
 func EvaluateNext(projectRoot, mode, targetEpic string) (NextResult, error) {
 	result := NextResult{
 		Mode:       mode,
@@ -46,32 +55,107 @@ func EvaluateNext(projectRoot, mode, targetEpic string) (NextResult, error) {
 		result.Mode = "all"
 	}
 
+	// Global counts are always needed for reporting, regardless of mode.
 	counts, err := QueryWorkCounts(projectRoot, result.Mode, result.TargetEpic)
 	if err != nil {
 		return result, err
 	}
+	result.Counts = counts
 
+	if result.Mode == "epic" && result.TargetEpic != "" {
+		return evaluateEpicMode(projectRoot, result)
+	}
+
+	return evaluateAllMode(projectRoot, result)
+}
+
+// evaluateEpicMode enforces epic containment: never fall through to global.
+func evaluateEpicMode(projectRoot string, result NextResult) (NextResult, error) {
+	// Query work within the target epic only.
+	epicQueues, err := queryQueues(projectRoot, result.TargetEpic)
+	if err != nil {
+		return result, err
+	}
+
+	// Update counts to reflect epic-scoped reality for the decision.
+	epicCounts, err := QueryEpicCounts(projectRoot, result.TargetEpic)
+	if err != nil {
+		return result, err
+	}
+
+	// If the epic has actionable work, do it.
+	if action := chooseNextAction(epicQueues, "epic"); action != nil {
+		result.Decision = "act"
+		result.Reason = fmt.Sprintf("Epic %s has actionable work", result.TargetEpic)
+		result.Next = action
+		return result, nil
+	}
+
+	// No actionable work in this epic. Why?
+	epicTotal := epicCounts.Ready + epicCounts.Rejected + epicCounts.Delivered +
+		epicCounts.InProgress + epicCounts.Blocked + epicCounts.Other
+
+	// All stories closed: epic is complete. Run the completion gate.
+	if epicTotal == 0 {
+		// Check if there's a next epic to rotate to.
+		nextID, nextTitle, err := AutoSelectEpic(projectRoot, result.TargetEpic)
+		if err != nil {
+			return result, err
+		}
+		if nextID != "" {
+			result.Decision = "epic_complete"
+			result.Reason = fmt.Sprintf("All stories in epic %s are closed -- run completion gate, then rotate to %s", result.TargetEpic, nextID)
+			result.NextEpic = nextID
+			result.NextEpicTitle = nextTitle
+			return result, nil
+		}
+		// No next epic: this was the last one.
+		result.Decision = "epic_complete"
+		result.Reason = fmt.Sprintf("All stories in epic %s are closed -- run completion gate (last epic)", result.TargetEpic)
+		return result, nil
+	}
+
+	// Stories still in-progress: agents are working. Wait.
+	if epicCounts.InProgress > 0 || epicCounts.Delivered > 0 {
+		result.Decision = "wait"
+		if epicCounts.Delivered > 0 {
+			result.Reason = fmt.Sprintf("Epic %s: %d delivered stories await PM review", result.TargetEpic, epicCounts.Delivered)
+		} else {
+			result.Reason = fmt.Sprintf("Epic %s: %d stories in progress -- waiting", result.TargetEpic, epicCounts.InProgress)
+		}
+		return result, nil
+	}
+
+	// Only blocked stories remain: no forward progress possible.
+	if epicCounts.Blocked > 0 {
+		result.Decision = "epic_blocked"
+		result.Reason = fmt.Sprintf("Epic %s: %d stories blocked with no actionable work -- escalate to user", result.TargetEpic, epicCounts.Blocked)
+		return result, nil
+	}
+
+	// Other non-dispatcher states.
+	if epicCounts.Other > 0 {
+		result.Decision = "wait"
+		result.Reason = fmt.Sprintf("Epic %s: %d stories in non-dispatcher workflow states", result.TargetEpic, epicCounts.Other)
+		return result, nil
+	}
+
+	// Fallback: shouldn't reach here, but be safe.
+	result.Decision = "wait"
+	result.Reason = fmt.Sprintf("Epic %s: no actionable work selected", result.TargetEpic)
+	return result, nil
+}
+
+// evaluateAllMode is the legacy global priority queue (--all escape hatch).
+func evaluateAllMode(projectRoot string, result NextResult) (NextResult, error) {
 	globalQueues, err := queryQueues(projectRoot, "")
 	if err != nil {
 		return result, err
 	}
-	counts.Delivered = len(globalQueues.Delivered)
-	counts.Rejected = len(globalQueues.Rejected)
-	counts.Ready = len(globalQueues.Ready)
-	result.Counts = counts
-
-	if result.Mode == "epic" && result.TargetEpic != "" {
-		priorityQueues, err := queryQueues(projectRoot, result.TargetEpic)
-		if err != nil {
-			return result, err
-		}
-		if action := chooseNextAction(priorityQueues, "priority_epic"); action != nil {
-			result.Decision = "act"
-			result.Reason = fmt.Sprintf("Priority epic %s still has actionable work", result.TargetEpic)
-			result.Next = action
-			return result, nil
-		}
-	}
+	// Refresh counts from the actual queues.
+	result.Counts.Delivered = len(globalQueues.Delivered)
+	result.Counts.Rejected = len(globalQueues.Rejected)
+	result.Counts.Ready = len(globalQueues.Ready)
 
 	if action := chooseNextAction(globalQueues, "backlog"); action != nil {
 		result.Decision = "act"

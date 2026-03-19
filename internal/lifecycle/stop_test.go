@@ -58,14 +58,11 @@ func TestBuildContinuationPrompt_Actionable_ReadyOnly(t *testing.T) {
 
 	prompt := BuildContinuationPrompt(state, decision, "50", wc)
 
-	if !strings.Contains(prompt, "Continue:") {
+	if !strings.Contains(prompt, "Continue.") {
 		t.Error("expected continuation prompt for actionable work")
 	}
 	if !strings.Contains(prompt, "3 ready") {
 		t.Error("expected ready count")
-	}
-	if !strings.Contains(prompt, "wait silently") {
-		t.Error("expected 'wait silently' fallback for already-spawned agents")
 	}
 }
 
@@ -88,7 +85,7 @@ func TestBuildContinuationPrompt_Actionable_WithDeliveries(t *testing.T) {
 }
 
 func TestBuildContinuationPrompt_EpicScope(t *testing.T) {
-	state := &loop.State{Mode: "epic", TargetEpic: "PROJ-a1b"}
+	state := &loop.State{Mode: "epic", TargetEpic: "PROJ-a1b", AutoRotate: true}
 	decision := &loop.StopDecision{
 		NewIteration: 1,
 		Reason:       "Actionable work remains",
@@ -97,11 +94,17 @@ func TestBuildContinuationPrompt_EpicScope(t *testing.T) {
 
 	prompt := BuildContinuationPrompt(state, decision, "10", wc)
 
-	if !strings.Contains(prompt, "Priority epic: PROJ-a1b") {
-		t.Error("expected epic scope in prompt")
+	if !strings.Contains(prompt, "Current epic: PROJ-a1b") {
+		t.Error("expected current epic context in prompt")
 	}
-	if strings.Contains(prompt, "epic PROJ-a1b only") {
-		t.Error("epic prompt should not terminate the loop at epic boundaries")
+	if !strings.Contains(prompt, "auto-rotate=true") {
+		t.Error("expected auto-rotate indicator in prompt")
+	}
+	if !strings.Contains(prompt, "scoped to the current epic") {
+		t.Error("expected containment instruction in prompt")
+	}
+	if !strings.Contains(prompt, "pvg loop next --json") {
+		t.Error("expected pvg loop next instruction in prompt")
 	}
 }
 

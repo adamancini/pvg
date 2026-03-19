@@ -21,12 +21,13 @@ type WorkCounts struct {
 
 // ndIssue matches the PascalCase JSON output of nd.
 type ndIssue struct {
-	ID     string   `json:"ID"`
-	Title  string   `json:"Title"`
-	Status string   `json:"Status"`
-	Parent string   `json:"Parent"`
-	Labels []string `json:"Labels"`
-	Type   string   `json:"Type"`
+	ID       string   `json:"ID"`
+	Title    string   `json:"Title"`
+	Status   string   `json:"Status"`
+	Parent   string   `json:"Parent"`
+	Labels   []string `json:"Labels"`
+	Type     string   `json:"Type"`
+	Priority int      `json:"Priority"`
 }
 
 var execCommand = exec.Command
@@ -237,6 +238,41 @@ func hasLabel(labels []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// AutoSelectEpic picks the highest-priority non-closed epic that has
+// actionable work (delivered, rejected, or ready children).
+// Returns the epic ID and title, or empty strings when no epic qualifies.
+func AutoSelectEpic(projectRoot string, exclude ...string) (string, string, error) {
+	epics, err := runND(projectRoot, "list", "--type", "epic", "--status", "!closed", "--sort", "priority", "--json")
+	if err != nil {
+		return "", "", fmt.Errorf("list epics: %w", err)
+	}
+
+	excludeSet := make(map[string]bool, len(exclude))
+	for _, id := range exclude {
+		excludeSet[id] = true
+	}
+
+	for _, epic := range epics {
+		if excludeSet[epic.ID] {
+			continue
+		}
+		queues, err := queryQueues(projectRoot, epic.ID)
+		if err != nil {
+			continue // skip epics we can't query
+		}
+		if len(queues.Delivered) > 0 || len(queues.Rejected) > 0 || len(queues.Ready) > 0 {
+			return epic.ID, epic.Title, nil
+		}
+	}
+
+	return "", "", nil
+}
+
+// QueryEpicCounts is the exported wrapper for queryEpicCounts.
+func QueryEpicCounts(projectRoot, epicID string) (WorkCounts, error) {
+	return queryEpicCounts(projectRoot, epicID)
 }
 
 func filterOutLabel(issues []ndIssue, label string) []ndIssue {

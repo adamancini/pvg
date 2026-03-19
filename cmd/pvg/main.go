@@ -594,8 +594,9 @@ Subcommands:
 	recover         Clean up after context loss
 
 Setup flags:
-  --all                    Run all ready work across all epics
+  (no flags)               Auto-select highest-priority epic (DEFAULT)
   --epic EPIC_ID           Target a specific epic (or pass EPIC_ID as positional arg)
+  --all                    Legacy: run across all epics (no containment)
   --max-iterations N       Max iterations before stopping (default: 50, 0 for unlimited)
   --max N                  Alias for --max-iterations
   --help, -h               Show this help
@@ -672,10 +673,6 @@ func loopSetup(cwd string, args []string) error {
 		}
 	}
 
-	if mode == "" {
-		return fmt.Errorf("specify --all or --epic EPIC_ID (or pass epic ID as positional arg)")
-	}
-
 	if err := ensureGitRepo(cwd); err != nil {
 		return err
 	}
@@ -690,7 +687,28 @@ func loopSetup(cwd string, args []string) error {
 		return loopStatus(cwd)
 	}
 
-	// Validate epic if specified
+	autoRotate := false
+
+	// Default: auto-select the highest-priority epic with actionable work.
+	if mode == "" {
+		selectedID, selectedTitle, err := loop.AutoSelectEpic(cwd)
+		if err != nil {
+			return fmt.Errorf("auto-select epic: %w", err)
+		}
+		if selectedID == "" {
+			return fmt.Errorf("no actionable epics found; create epics with stories first, or use --all for global mode")
+		}
+		epicID = selectedID
+		mode = "epic"
+		autoRotate = true
+		fmt.Printf("[LOOP] Auto-selected epic: %s", selectedID)
+		if selectedTitle != "" {
+			fmt.Printf(" (%s)", selectedTitle)
+		}
+		fmt.Println()
+	}
+
+	// Validate epic if specified (covers both auto-selected and explicit --epic).
 	if mode == "epic" {
 		if err := loop.ValidateEpic(cwd, epicID); err != nil {
 			return fmt.Errorf("validate epic: %w", err)
@@ -698,12 +716,14 @@ func loopSetup(cwd string, args []string) error {
 	}
 
 	state := loop.NewState(mode, epicID, maxIter)
+	state.AutoRotate = autoRotate || mode == "epic" // always rotate in epic mode
+
 	if err := loop.WriteState(cwd, state); err != nil {
 		return fmt.Errorf("write loop state: %w", err)
 	}
 
 	fmt.Println("[LOOP] Execution loop activated.")
-	fmt.Printf("  Mode: %s\n", mode)
+	fmt.Printf("  Mode: %s (epic-at-a-time, auto-rotate=%v)\n", mode, state.AutoRotate)
 	if epicID != "" {
 		fmt.Printf("  Target: %s\n", epicID)
 	}
@@ -747,9 +767,12 @@ func loopStatus(cwd string) error {
 	}
 
 	fmt.Println("[LOOP] Execution loop active.")
-	fmt.Printf("  Mode: %s\n", state.Mode)
+	fmt.Printf("  Mode: %s (auto-rotate=%v)\n", state.Mode, state.AutoRotate)
 	if state.TargetEpic != "" {
 		fmt.Printf("  Target: %s\n", state.TargetEpic)
+	}
+	if len(state.CompletedEpics) > 0 {
+		fmt.Printf("  Completed epics: %v\n", state.CompletedEpics)
 	}
 	fmt.Printf("  Iteration: %d", state.Iteration)
 	if state.MaxIterations > 0 {
@@ -843,6 +866,13 @@ func loopNext(cwd string, args []string) error {
 			fmt.Print(", hard-tdd")
 		}
 		fmt.Println(")")
+	}
+	if result.NextEpic != "" {
+		fmt.Printf("  Rotate to: %s", result.NextEpic)
+		if result.NextEpicTitle != "" {
+			fmt.Printf(" (%s)", result.NextEpicTitle)
+		}
+		fmt.Println()
 	}
 	return nil
 }

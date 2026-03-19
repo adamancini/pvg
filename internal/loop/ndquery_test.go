@@ -172,6 +172,119 @@ func TestCountOtherIssues(t *testing.T) {
 	}
 }
 
+func TestAutoSelectEpic_PicksHighestPriorityWithActionableWork(t *testing.T) {
+	withStubbedND(t, map[string]string{
+		// List non-closed epics sorted by priority
+		"list --type epic --status !closed --sort priority --json": `[
+			{"ID":"PROJ-e1","Title":"Epic One","Type":"epic","Priority":0},
+			{"ID":"PROJ-e2","Title":"Epic Two","Type":"epic","Priority":1}
+		]`,
+		// Epic One has no actionable work
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e1": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e1":         `[]`,
+		"ready --sort priority --json --parent PROJ-e1":                                       `[]`,
+		// Epic Two has ready work
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e2": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e2":         `[]`,
+		"ready --sort priority --json --parent PROJ-e2":                                       `[{"ID":"PROJ-s1","Title":"Story","Status":"ready"}]`,
+	})
+
+	id, title, err := AutoSelectEpic(t.TempDir())
+	if err != nil {
+		t.Fatalf("AutoSelectEpic() error: %v", err)
+	}
+	if id != "PROJ-e2" {
+		t.Fatalf("expected PROJ-e2, got %s", id)
+	}
+	if title != "Epic Two" {
+		t.Fatalf("expected 'Epic Two', got %s", title)
+	}
+}
+
+func TestAutoSelectEpic_RespectsExcludeList(t *testing.T) {
+	withStubbedND(t, map[string]string{
+		"list --type epic --status !closed --sort priority --json": `[
+			{"ID":"PROJ-e1","Title":"Epic One","Type":"epic","Priority":0},
+			{"ID":"PROJ-e2","Title":"Epic Two","Type":"epic","Priority":1}
+		]`,
+		// Epic One has work but is excluded
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e1": `[{"ID":"PROJ-d1","Title":"Delivered","Status":"in_progress","Labels":["delivered"]}]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e1":         `[]`,
+		"ready --sort priority --json --parent PROJ-e1":                                       `[]`,
+		// Epic Two also has work
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e2": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e2":         `[]`,
+		"ready --sort priority --json --parent PROJ-e2":                                       `[{"ID":"PROJ-s2","Title":"Story","Status":"ready"}]`,
+	})
+
+	id, _, err := AutoSelectEpic(t.TempDir(), "PROJ-e1")
+	if err != nil {
+		t.Fatalf("AutoSelectEpic() error: %v", err)
+	}
+	if id != "PROJ-e2" {
+		t.Fatalf("expected PROJ-e2 after excluding PROJ-e1, got %s", id)
+	}
+}
+
+func TestAutoSelectEpic_ReturnsEmptyWhenNoActionableEpics(t *testing.T) {
+	withStubbedND(t, map[string]string{
+		"list --type epic --status !closed --sort priority --json": `[
+			{"ID":"PROJ-e1","Title":"Epic One","Type":"epic"}
+		]`,
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e1": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e1":         `[]`,
+		"ready --sort priority --json --parent PROJ-e1":                                       `[]`,
+	})
+
+	id, title, err := AutoSelectEpic(t.TempDir())
+	if err != nil {
+		t.Fatalf("AutoSelectEpic() error: %v", err)
+	}
+	if id != "" || title != "" {
+		t.Fatalf("expected empty result, got id=%s title=%s", id, title)
+	}
+}
+
+func TestAutoSelectEpic_ReturnsEmptyWhenNoEpicsExist(t *testing.T) {
+	withStubbedND(t, map[string]string{
+		"list --type epic --status !closed --sort priority --json": `[]`,
+	})
+
+	id, _, err := AutoSelectEpic(t.TempDir())
+	if err != nil {
+		t.Fatalf("AutoSelectEpic() error: %v", err)
+	}
+	if id != "" {
+		t.Fatalf("expected empty id, got %s", id)
+	}
+}
+
+func TestAutoSelectEpic_PrefersDeliveredOverReady(t *testing.T) {
+	withStubbedND(t, map[string]string{
+		"list --type epic --status !closed --sort priority --json": `[
+			{"ID":"PROJ-e1","Title":"Epic One","Type":"epic","Priority":0},
+			{"ID":"PROJ-e2","Title":"Epic Two","Type":"epic","Priority":1}
+		]`,
+		// Epic One has delivered work (pipeline needs unblocking)
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e1": `[{"ID":"PROJ-d1","Title":"Delivered","Status":"in_progress","Labels":["delivered"]}]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e1":         `[]`,
+		"ready --sort priority --json --parent PROJ-e1":                                       `[]`,
+		// Epic Two has ready work
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e2": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e2":         `[]`,
+		"ready --sort priority --json --parent PROJ-e2":                                       `[{"ID":"PROJ-s2","Title":"Story","Status":"ready"}]`,
+	})
+
+	id, _, err := AutoSelectEpic(t.TempDir())
+	if err != nil {
+		t.Fatalf("AutoSelectEpic() error: %v", err)
+	}
+	// PROJ-e1 is higher priority (P0) and has delivered work
+	if id != "PROJ-e1" {
+		t.Fatalf("expected PROJ-e1 (has delivered work, higher priority), got %s", id)
+	}
+}
+
 func TestQueryWorkCounts_ReturnsErrorWhenNDQueriesFail(t *testing.T) {
 	oldExec := execCommand
 	execCommand = func(name string, args ...string) *exec.Cmd {

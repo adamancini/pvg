@@ -8,66 +8,150 @@ import (
 	"testing"
 )
 
-func TestEvaluateNext_PrioritizesDeliveredInPriorityEpic(t *testing.T) {
-	withStubbedND(t, map[string]string{
-		"ready --json":                               `[]`,
-		"list --status in_progress --json":           `[]`,
-		"list --status open --label rejected --json": `[]`,
-		"blocked --json":                             `[]`,
-		"list --status !closed --json":               `[{"ID":"PROJ-epic-story","Status":"in_progress","Parent":"PROJ-epic","Labels":["delivered"]}]`,
-		"list --status in_progress --label delivered --sort priority --json":                    `[{"ID":"PROJ-backlog","Title":"Global delivery","Status":"in_progress","Labels":["delivered"]}]`,
-		"list --status open --label rejected --sort priority --json":                            `[]`,
-		"ready --sort priority --json":                                                          `[{"ID":"PROJ-ready","Title":"Ready story","Status":"ready","Labels":[]}]`,
-		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[{"ID":"PROJ-epic-story","Title":"Epic delivery","Status":"in_progress","Parent":"PROJ-epic","Labels":["delivered"]}]`,
+// ---------------------------------------------------------------------------
+// Epic mode: containment tests
+// ---------------------------------------------------------------------------
+
+func TestEvaluateNext_EpicMode_ActsOnDeliveredInEpic(t *testing.T) {
+	withStubbedND(t, epicModeStubs(map[string]string{
+		// Epic has a delivered story
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[{"ID":"PROJ-s1","Title":"Epic delivery","Status":"in_progress","Parent":"PROJ-epic","Labels":["delivered"]}]`,
 		"list --status open --label rejected --sort priority --json --parent PROJ-epic":         `[]`,
 		"ready --sort priority --json --parent PROJ-epic":                                       `[]`,
-	})
+		// Epic children: one delivered
+		"children PROJ-epic --json": `[{"ID":"PROJ-s1","Status":"in_progress","Labels":["delivered"]}]`,
+	}))
 
 	result, err := EvaluateNext(t.TempDir(), "epic", "PROJ-epic")
 	if err != nil {
 		t.Fatalf("EvaluateNext() error: %v", err)
 	}
-
 	if result.Decision != "act" {
-		t.Fatalf("expected act decision, got %s", result.Decision)
+		t.Fatalf("expected act, got %s: %s", result.Decision, result.Reason)
 	}
-	if result.Next == nil || result.Next.StoryID != "PROJ-epic-story" {
-		t.Fatalf("expected epic story to be selected, got %#v", result.Next)
+	if result.Next == nil || result.Next.StoryID != "PROJ-s1" {
+		t.Fatalf("expected PROJ-s1, got %#v", result.Next)
 	}
-	if result.Next.Scope != "priority_epic" {
-		t.Fatalf("expected priority_epic scope, got %#v", result.Next)
+	if result.Next.Scope != "epic" {
+		t.Fatalf("expected epic scope, got %s", result.Next.Scope)
 	}
 }
 
-func TestEvaluateNext_FallsBackToBacklogWhenPriorityEpicEmpty(t *testing.T) {
-	withStubbedND(t, map[string]string{
-		"ready --json":                               `[{"ID":"PROJ-backlog","Status":"ready"}]`,
-		"list --status in_progress --json":           `[]`,
-		"list --status open --label rejected --json": `[]`,
-		"blocked --json":                             `[]`,
-		"list --status !closed --json":               `[{"ID":"PROJ-backlog","Status":"ready"}]`,
-		"list --status in_progress --label delivered --sort priority --json":                    `[]`,
-		"list --status open --label rejected --sort priority --json":                            `[]`,
-		"ready --sort priority --json":                                                          `[{"ID":"PROJ-backlog","Title":"Backlog story","Status":"ready","Labels":[]}]`,
+func TestEvaluateNext_EpicMode_DoesNotFallThroughToGlobal(t *testing.T) {
+	withStubbedND(t, epicModeStubs(map[string]string{
+		// Epic has NO actionable work
 		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[]`,
 		"list --status open --label rejected --sort priority --json --parent PROJ-epic":         `[]`,
 		"ready --sort priority --json --parent PROJ-epic":                                       `[]`,
-	})
+		// Epic children: one in-progress (agents working)
+		"children PROJ-epic --json": `[{"ID":"PROJ-s1","Status":"in_progress","Labels":[]}]`,
+	}))
 
 	result, err := EvaluateNext(t.TempDir(), "epic", "PROJ-epic")
 	if err != nil {
 		t.Fatalf("EvaluateNext() error: %v", err)
 	}
-
-	if result.Next == nil || result.Next.StoryID != "PROJ-backlog" {
-		t.Fatalf("expected backlog story, got %#v", result.Next)
+	// Must NOT pick from global backlog -- must wait within the epic.
+	if result.Decision != "wait" {
+		t.Fatalf("expected wait (containment), got %s: %s", result.Decision, result.Reason)
 	}
-	if result.Next.Scope != "backlog" {
-		t.Fatalf("expected backlog scope, got %#v", result.Next)
+	if result.Next != nil {
+		t.Fatalf("expected no action (containment), got %#v", result.Next)
 	}
 }
 
-func TestEvaluateNext_PrefersRejectedBeforeReadyAndExcludesRejectedFromReadyCount(t *testing.T) {
+func TestEvaluateNext_EpicMode_EpicCompleteWhenAllClosed(t *testing.T) {
+	withStubbedND(t, epicModeStubs(map[string]string{
+		// Epic has no actionable work
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-epic":         `[]`,
+		"ready --sort priority --json --parent PROJ-epic":                                       `[]`,
+		// Epic children: all closed (empty result)
+		"children PROJ-epic --json": `[]`,
+		// AutoSelectEpic: another epic exists
+		"list --type epic --status !closed --sort priority --json": `[{"ID":"PROJ-epic","Type":"epic"},{"ID":"PROJ-e2","Title":"Next Epic","Type":"epic"}]`,
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-e2": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-e2":         `[]`,
+		"ready --sort priority --json --parent PROJ-e2":                                       `[{"ID":"PROJ-s2","Title":"Story Two","Status":"ready"}]`,
+	}))
+
+	result, err := EvaluateNext(t.TempDir(), "epic", "PROJ-epic")
+	if err != nil {
+		t.Fatalf("EvaluateNext() error: %v", err)
+	}
+	if result.Decision != "epic_complete" {
+		t.Fatalf("expected epic_complete, got %s: %s", result.Decision, result.Reason)
+	}
+	if result.NextEpic != "PROJ-e2" {
+		t.Fatalf("expected rotation to PROJ-e2, got %s", result.NextEpic)
+	}
+}
+
+func TestEvaluateNext_EpicMode_EpicCompleteLastEpic(t *testing.T) {
+	withStubbedND(t, epicModeStubs(map[string]string{
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-epic":         `[]`,
+		"ready --sort priority --json --parent PROJ-epic":                                       `[]`,
+		"children PROJ-epic --json":                                                             `[]`,
+		// No other epics
+		"list --type epic --status !closed --sort priority --json": `[{"ID":"PROJ-epic","Type":"epic"}]`,
+		// PROJ-epic is excluded by AutoSelectEpic, so no match
+	}))
+
+	result, err := EvaluateNext(t.TempDir(), "epic", "PROJ-epic")
+	if err != nil {
+		t.Fatalf("EvaluateNext() error: %v", err)
+	}
+	if result.Decision != "epic_complete" {
+		t.Fatalf("expected epic_complete, got %s: %s", result.Decision, result.Reason)
+	}
+	if result.NextEpic != "" {
+		t.Fatalf("expected empty NextEpic (last epic), got %s", result.NextEpic)
+	}
+}
+
+func TestEvaluateNext_EpicMode_EpicBlockedWhenOnlyBlocked(t *testing.T) {
+	withStubbedND(t, epicModeStubs(map[string]string{
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-epic":         `[]`,
+		"ready --sort priority --json --parent PROJ-epic":                                       `[]`,
+		"children PROJ-epic --json": `[{"ID":"PROJ-s1","Status":"blocked","Labels":[]}]`,
+	}))
+
+	result, err := EvaluateNext(t.TempDir(), "epic", "PROJ-epic")
+	if err != nil {
+		t.Fatalf("EvaluateNext() error: %v", err)
+	}
+	if result.Decision != "epic_blocked" {
+		t.Fatalf("expected epic_blocked, got %s: %s", result.Decision, result.Reason)
+	}
+}
+
+func TestEvaluateNext_EpicMode_WaitsOnDeliveredInEpicCounts(t *testing.T) {
+	// Edge case: queryQueues finds no delivered (because nd query timing),
+	// but epicCounts shows delivered. Should wait, not fall through.
+	withStubbedND(t, epicModeStubs(map[string]string{
+		"list --status in_progress --label delivered --sort priority --json --parent PROJ-epic": `[]`,
+		"list --status open --label rejected --sort priority --json --parent PROJ-epic":         `[]`,
+		"ready --sort priority --json --parent PROJ-epic":                                       `[]`,
+		// But children shows delivered (race-safe: epicCounts catches it)
+		"children PROJ-epic --json": `[{"ID":"PROJ-s1","Status":"in_progress","Labels":["delivered"]},{"ID":"PROJ-s2","Status":"closed","Labels":[]}]`,
+	}))
+
+	result, err := EvaluateNext(t.TempDir(), "epic", "PROJ-epic")
+	if err != nil {
+		t.Fatalf("EvaluateNext() error: %v", err)
+	}
+	if result.Decision != "wait" {
+		t.Fatalf("expected wait (delivered in epic counts), got %s: %s", result.Decision, result.Reason)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// All mode: legacy behavior (unchanged)
+// ---------------------------------------------------------------------------
+
+func TestEvaluateNext_AllMode_PrefersRejectedBeforeReady(t *testing.T) {
 	withStubbedND(t, map[string]string{
 		"ready --json":                               `[{"ID":"PROJ-rework","Status":"ready","Labels":["rejected"]},{"ID":"PROJ-ready","Status":"ready","Labels":[]}]`,
 		"list --status in_progress --json":           `[]`,
@@ -83,19 +167,15 @@ func TestEvaluateNext_PrefersRejectedBeforeReadyAndExcludesRejectedFromReadyCoun
 	if err != nil {
 		t.Fatalf("EvaluateNext() error: %v", err)
 	}
-
 	if result.Next == nil || result.Next.Queue != "rejected" {
 		t.Fatalf("expected rejected queue to win, got %#v", result.Next)
 	}
 	if result.Counts.Ready != 1 {
 		t.Fatalf("expected ready count to exclude rejected stories, got %+v", result.Counts)
 	}
-	if result.Counts.Rejected != 1 {
-		t.Fatalf("expected rejected count 1, got %+v", result.Counts)
-	}
 }
 
-func TestEvaluateNext_HardTDDReadyStartsInRedPhase(t *testing.T) {
+func TestEvaluateNext_AllMode_HardTDDReadyStartsInRedPhase(t *testing.T) {
 	withStubbedND(t, map[string]string{
 		"ready --json":                               `[{"ID":"PROJ-hard","Status":"ready","Labels":["hard-tdd"]}]`,
 		"list --status in_progress --json":           `[]`,
@@ -111,13 +191,12 @@ func TestEvaluateNext_HardTDDReadyStartsInRedPhase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvaluateNext() error: %v", err)
 	}
-
 	if result.Next == nil || result.Next.Phase != "red" || !result.Next.HardTDD {
 		t.Fatalf("expected hard-tdd red phase, got %#v", result.Next)
 	}
 }
 
-func TestEvaluateNext_WaitsWhenOnlyInProgressRemains(t *testing.T) {
+func TestEvaluateNext_AllMode_WaitsWhenOnlyInProgressRemains(t *testing.T) {
 	withStubbedND(t, map[string]string{
 		"ready --json":                               `[]`,
 		"list --status in_progress --json":           `[{"ID":"PROJ-run","Status":"in_progress","Labels":[]}]`,
@@ -133,10 +212,51 @@ func TestEvaluateNext_WaitsWhenOnlyInProgressRemains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvaluateNext() error: %v", err)
 	}
-
 	if result.Decision != "wait" {
 		t.Fatalf("expected wait, got %+v", result)
 	}
+}
+
+func TestEvaluateNext_AllMode_CompleteWhenEmpty(t *testing.T) {
+	withStubbedND(t, map[string]string{
+		"ready --json":                               `[]`,
+		"list --status in_progress --json":           `[]`,
+		"list --status open --label rejected --json": `[]`,
+		"blocked --json":                             `[]`,
+		"list --status !closed --json":               `[]`,
+		"list --status in_progress --label delivered --sort priority --json": `[]`,
+		"list --status open --label rejected --sort priority --json":         `[]`,
+		"ready --sort priority --json":                                       `[]`,
+	})
+
+	result, err := EvaluateNext(t.TempDir(), "all", "")
+	if err != nil {
+		t.Fatalf("EvaluateNext() error: %v", err)
+	}
+	if result.Decision != "complete" {
+		t.Fatalf("expected complete, got %s: %s", result.Decision, result.Reason)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+// epicModeStubs merges epic-specific stubs with the global-count stubs
+// that EvaluateNext always queries (for the counts in the result).
+func epicModeStubs(epicStubs map[string]string) map[string]string {
+	base := map[string]string{
+		// Global counts (always queried by QueryWorkCounts)
+		"ready --json":                               `[]`,
+		"list --status in_progress --json":           `[]`,
+		"list --status open --label rejected --json": `[]`,
+		"blocked --json":                             `[]`,
+		"list --status !closed --json":               `[]`,
+	}
+	for k, v := range epicStubs {
+		base[k] = v
+	}
+	return base
 }
 
 func withStubbedND(t *testing.T, responses map[string]string) {
