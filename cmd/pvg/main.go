@@ -189,6 +189,15 @@ func (e cliExit) Error() string  { return "" }
 func (e cliExit) ExitCode() int  { return e.code }
 func (e cliExit) String() string { return "" }
 
+func ensureGitRepo(cwd string) error {
+	gitDir := filepath.Join(cwd, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("not a git repository (no .git directory in %s); Paivot requires git for branch management and agent worktrees -- run 'git init' and restart the session", cwd)
+	}
+	return nil
+}
+
 func ensureNDInitialized(cwd string) error {
 	vaultDir, err := ndvault.Resolve(cwd)
 	if err != nil {
@@ -665,6 +674,10 @@ func loopSetup(cwd string, args []string) error {
 
 	if mode == "" {
 		return fmt.Errorf("specify --all or --epic EPIC_ID (or pass epic ID as positional arg)")
+	}
+
+	if err := ensureGitRepo(cwd); err != nil {
+		return err
 	}
 
 	if err := ensureNDInitialized(cwd); err != nil {
