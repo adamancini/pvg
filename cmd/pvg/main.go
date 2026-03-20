@@ -43,8 +43,10 @@ import (
 	"github.com/paivot-ai/pvg/internal/governance"
 	"github.com/paivot-ai/pvg/internal/guard"
 	"github.com/paivot-ai/pvg/internal/lifecycle"
+	plint "github.com/paivot-ai/pvg/internal/lint"
 	"github.com/paivot-ai/pvg/internal/loop"
 	"github.com/paivot-ai/pvg/internal/ndvault"
+	"github.com/paivot-ai/pvg/internal/rtm"
 	"github.com/paivot-ai/pvg/internal/settings"
 	"github.com/paivot-ai/pvg/internal/story"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
@@ -120,6 +122,10 @@ func main() {
 		err = settings.Run(args)
 	case "story":
 		err = runStory(args)
+	case "lint":
+		err = runLint(args)
+	case "rtm":
+		err = runRTM(args)
 	case "verify":
 		err = runVerify(args)
 	case "fetch-vlt-skill":
@@ -171,6 +177,8 @@ Commands:
   seed [--force]         Seed vault with agent prompts and conventions
   settings [key|key=value]  View, read, or set project settings
   story <subcommand>        Shared story workflow helpers
+  lint [--json]             Check backlog for artifact collisions (PRODUCES)
+  rtm [check] [--json]      Requirement Traceability Matrix (D&F coverage check)
   verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
@@ -1010,6 +1018,116 @@ func loopRecover(cwd string, args []string) error {
 		}
 	}
 
+	return nil
+}
+
+func runLint(args []string) error {
+	jsonOutput := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			jsonOutput = true
+		case "--help", "-h":
+			fmt.Fprintln(os.Stderr, `pvg lint -- check backlog for artifact collisions
+
+Scans all non-closed stories for PRODUCES blocks and flags any artifact
+(file path) claimed by more than one story.
+
+Flags:
+  --json    Output as JSON
+  --help    Show this help`)
+			return nil
+		default:
+			return fmt.Errorf("unknown flag %q", arg)
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cannot determine working directory: %w", err)
+	}
+
+	vaultDir, err := ndvault.Resolve(cwd)
+	if err != nil {
+		return fmt.Errorf("resolve nd vault: %w", err)
+	}
+
+	result, err := plint.CheckArtifactCollisions(vaultDir)
+	if err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		out, err := plint.FormatJSON(result)
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+	} else {
+		fmt.Print(plint.FormatText(result))
+	}
+
+	if !result.Passed {
+		return cliExit{code: 1}
+	}
+	return nil
+}
+
+func runRTM(args []string) error {
+	jsonOutput := false
+	for _, arg := range args {
+		switch arg {
+		case "check", "": // "check" is the default subcommand
+			continue
+		case "--json":
+			jsonOutput = true
+		case "--help", "-h":
+			fmt.Fprintln(os.Stderr, `pvg rtm -- Requirement Traceability Matrix
+
+Reads BUSINESS.md, DESIGN.md, and ARCHITECTURE.md for tagged requirements
+([NEW], [EXPANDED], [CRITICAL], [REQUIRED], [CHANGED]) and checks that each
+has a covering story in the nd backlog.
+
+Usage:
+  pvg rtm [check] [--json]
+
+Flags:
+  --json    Output as JSON
+  --help    Show this help`)
+			return nil
+		default:
+			return fmt.Errorf("unknown argument %q", arg)
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cannot determine working directory: %w", err)
+	}
+
+	vaultDir, err := ndvault.Resolve(cwd)
+	if err != nil {
+		return fmt.Errorf("resolve nd vault: %w", err)
+	}
+
+	result, err := rtm.CheckCoverage(cwd, vaultDir)
+	if err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		out, err := rtm.FormatJSON(result)
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+	} else {
+		fmt.Print(rtm.FormatText(result))
+	}
+
+	if !result.Passed {
+		return cliExit{code: 1}
+	}
 	return nil
 }
 

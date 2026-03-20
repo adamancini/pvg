@@ -460,15 +460,23 @@ Light D&F (brownfield, or user requests "light"/"quick"):
   them yourself. Light means "fewer rounds", not "bypass agents".
   Specialist review still applies if dnf.specialist_review is enabled.
 
-Post-D&F: Two-step backlog creation with adversarial review.
+Post-D&F: Three-step backlog creation with structural gates and adversarial review.
   1. Spawn Sr PM to create the backlog from all three D&F documents.
      The Sr PM reads all three documents and creates self-contained stories
      with all context embedded.
-  2. Spawn Anchor to adversarially review the backlog.
+  2. Run structural gates (MANDATORY before Anchor submission):
+     pvg rtm check    -- Verify all tagged D&F requirements have covering stories
+     pvg lint          -- Check for artifact collisions (duplicate PRODUCES)
+     Both must pass. If either fails, re-spawn Sr PM with the failure output.
+     These are deterministic -- if they fail, the Anchor WILL reject for the
+     same reason. Running them first saves a full Anchor round-trip.
+  3. Spawn Anchor to adversarially review the backlog.
      The Anchor checks for gaps: missing walking skeletons, horizontal layers,
      missing integration stories, dependency cycles, INVEST violations.
      The Anchor returns APPROVED or REJECTED -- no conditional pass.
      If REJECTED: relay the gaps to the Sr PM, re-spawn to fix, re-submit to Anchor.
+     (The Sr PM applies the Feedback Generalization Protocol: for each issue,
+     identify the general rule, sweep the entire backlog, fix all violations.)
      Execution MUST NOT begin until the Anchor returns APPROVED.
 
 ### Specialist Review Loop (dispatcher procedure)
