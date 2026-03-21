@@ -36,7 +36,10 @@ func Resolve(projectRoot string) (string, error) {
 	if isPaivotManaged(projectRoot) {
 		commonDir, err := gitCommonDir(projectRoot)
 		if err == nil {
-			return filepath.Join(commonDir, sharedVaultRelPath), nil
+			candidate := filepath.Join(commonDir, sharedVaultRelPath)
+			if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+				return candidate, nil
+			}
 		}
 	}
 
@@ -130,6 +133,11 @@ func parseSharedConfig(path string) (mode, relPath string, err error) {
 	}
 	return mode, relPath, nil
 }
+
+// IsPaivotManaged reports whether projectRoot (or an ancestor) contains
+// paivot-specific vault artifacts such as knowledge settings, dispatcher
+// state, or loop state.
+func IsPaivotManaged(projectRoot string) bool { return isPaivotManaged(projectRoot) }
 
 func isPaivotManaged(projectRoot string) bool {
 	dir := filepath.Clean(projectRoot)

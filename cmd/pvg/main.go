@@ -26,6 +26,7 @@
 //	pvg loop recover             # Clean up after context loss
 //	pvg fetch-vlt-skill [--force] # Download and install vlt skill
 //	pvg verify [path...] [flags] # Scan for stubs, thin files, TODOs
+//	pvg doctor [--json] [--fix]  # Run diagnostic checks
 //	pvg version                  # Print version
 package main
 
@@ -40,6 +41,7 @@ import (
 	"strings"
 
 	"github.com/paivot-ai/pvg/internal/dispatcher"
+	"github.com/paivot-ai/pvg/internal/doctor"
 	"github.com/paivot-ai/pvg/internal/governance"
 	"github.com/paivot-ai/pvg/internal/guard"
 	"github.com/paivot-ai/pvg/internal/lifecycle"
@@ -128,6 +130,8 @@ func main() {
 		err = runRTM(args)
 	case "verify":
 		err = runVerify(args)
+	case "doctor":
+		err = runDoctor(args)
 	case "fetch-vlt-skill":
 		force := len(args) > 0 && (args[0] == "--force" || args[0] == "-f")
 		err = lifecycle.FetchVltSkill(force)
@@ -180,6 +184,7 @@ Commands:
   lint [--json]             Check backlog for artifact collisions (PRODUCES)
   rtm [check] [--json]      Requirement Traceability Matrix (D&F coverage check)
   verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
+  doctor [--json] [--fix]  Run diagnostic checks on vault configuration
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
 	help                   Show this help`)
@@ -1231,6 +1236,68 @@ Exit code 0 if clean, 1 if issues found.`)
 
 	if !result.Passed {
 		os.Exit(1)
+	}
+	return nil
+}
+
+func runDoctor(args []string) error {
+	jsonOutput := false
+	fix := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			jsonOutput = true
+		case "--fix":
+			fix = true
+		case "--help", "-h":
+			fmt.Fprintln(os.Stderr, `pvg doctor -- diagnostic checks for vault configuration
+
+Checks:
+  vault-resolution          Verify nd vault resolves and contains .nd.yaml
+  nd-reachable              Verify nd binary is on PATH
+  shared-config-consistency Check shared vault config consistency
+  nd-doctor                 Run nd doctor and report findings
+  loop-state                Verify loop state file is valid
+  worktree-hygiene          Check for stale git worktrees
+
+Flags:
+  --json    Output as JSON
+  --fix     Auto-fix fixable issues (prune worktrees, rehash nd issues)
+  --help    Show this help`)
+			return nil
+		default:
+			return fmt.Errorf("unknown flag %q (see pvg doctor --help)", arg)
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cannot determine working directory: %w", err)
+	}
+
+	report := doctor.RunAll(cwd)
+
+	if fix {
+		actions := doctor.Fix(cwd, report)
+		for _, a := range actions {
+			fmt.Fprintf(os.Stderr, "[FIX] %s\n", a)
+		}
+		// Re-run checks after fix for accurate post-fix report.
+		report = doctor.RunAll(cwd)
+	}
+
+	if jsonOutput {
+		out, jsonErr := doctor.FormatJSON(report)
+		if jsonErr != nil {
+			return jsonErr
+		}
+		fmt.Println(out)
+	} else {
+		fmt.Print(doctor.FormatText(report))
+	}
+
+	if !report.Passed {
+		return cliExit{code: 1}
 	}
 	return nil
 }

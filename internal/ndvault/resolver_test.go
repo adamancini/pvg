@@ -100,6 +100,39 @@ func TestResolve_PrefersSharedVaultFromNestedWorktree(t *testing.T) {
 	}
 }
 
+func TestResolve_PaivotManagedWithoutSharedVaultFallsBackToLocal(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "repo")
+
+	// Create .vault/ with paivot markers (makes isPaivotManaged() true)
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".vault", "knowledge"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create .git directory (real repo, not a worktree)
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Do NOT create .git/paivot/nd-vault -- this is the bug scenario:
+	// isPaivotManaged returns true, gitCommonDir returns .git, but the
+	// shared vault path doesn't exist. Should fall through to local .vault/.
+
+	got, err := Resolve(projectRoot)
+	if err != nil {
+		t.Fatalf("Resolve() error: %v", err)
+	}
+
+	want := filepath.Join(projectRoot, ".vault")
+	if resolved, err := filepath.EvalSymlinks(got); err == nil {
+		got = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(want); err == nil {
+		want = resolved
+	}
+	if got != want {
+		t.Fatalf("Resolve() = %q, want %q (should fall through to local .vault)", got, want)
+	}
+}
+
 func setupSharedWorktree(t *testing.T) (projectRoot, sharedVault string) {
 	t.Helper()
 
