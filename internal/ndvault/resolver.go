@@ -29,20 +29,12 @@ func Resolve(projectRoot string) (string, error) {
 
 	projectRoot = filepath.Clean(projectRoot)
 
+	// Shared vault ONLY when explicitly configured via .nd-shared.yaml.
 	if shared, err := resolveSharedVaultDir(projectRoot); err == nil {
 		return shared, nil
 	}
 
-	if isPaivotManaged(projectRoot) {
-		commonDir, err := gitCommonDir(projectRoot)
-		if err == nil {
-			candidate := filepath.Join(commonDir, sharedVaultRelPath)
-			if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
-				return candidate, nil
-			}
-		}
-	}
-
+	// Default: local .vault/ directory.
 	local, err := nearestLocalVault(projectRoot)
 	if err != nil {
 		return "", err

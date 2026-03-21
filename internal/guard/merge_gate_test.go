@@ -47,6 +47,12 @@ func writeProjectSettings(t *testing.T, dir string) {
 	if err := os.WriteFile(path, []byte("stack_detection: false\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	// Explicit shared vault config (required for ndvault.Resolve to find shared vault)
+	sharedCfg := "# nd shared-worktree state\nmode: git_common_dir\npath: paivot/nd-vault\n"
+	sharedPath := filepath.Join(dir, ".vault", ".nd-shared.yaml")
+	if err := os.WriteFile(sharedPath, []byte(sharedCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func setupPaivotWorktree(t *testing.T) (projectRoot, sharedVault string) {
@@ -58,7 +64,12 @@ func setupPaivotWorktree(t *testing.T) (projectRoot, sharedVault string) {
 	commonDir := filepath.Join(base, "gitdir")
 	sharedVault = filepath.Join(commonDir, "paivot", "nd-vault")
 
-	if err := os.MkdirAll(filepath.Join(projectRoot, ".vault", "knowledge"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".vault"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Explicit shared vault config (required since isPaivotManaged heuristic was removed)
+	sharedCfg := "# nd shared-worktree state\nmode: git_common_dir\npath: paivot/nd-vault\n"
+	if err := os.WriteFile(filepath.Join(projectRoot, ".vault", ".nd-shared.yaml"), []byte(sharedCfg), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(gitDir, 0755); err != nil {

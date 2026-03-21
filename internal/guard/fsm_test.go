@@ -389,6 +389,11 @@ func setupFSMProject(t *testing.T, fsmEnabled bool, issueID, issueStatus string)
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	// Explicit shared vault config
+	sharedCfg := "# nd shared-worktree state\nmode: git_common_dir\npath: paivot/nd-vault\n"
+	if err := os.WriteFile(filepath.Join(dir, ".vault", ".nd-shared.yaml"), []byte(sharedCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
 	enabled := "false"
 	if fsmEnabled {
 		enabled = "true"
@@ -475,7 +480,14 @@ func TestCheckFSM_UsesDeferredResumeTarget(t *testing.T) {
 	if err := os.MkdirAll(settingsDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(dir, ".git", "paivot", "nd-vault", "issues"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	sharedCfg := "# nd shared-worktree state\nmode: git_common_dir\npath: paivot/nd-vault\n"
+	if err := os.WriteFile(filepath.Join(dir, ".vault", ".nd-shared.yaml"), []byte(sharedCfg), 0644); err != nil {
 		t.Fatal(err)
 	}
 	settingsContent := "workflow.fsm: true\nworkflow.sequence: open,in_progress,closed\nworkflow.exit_rules: deferred:in_progress\n"
