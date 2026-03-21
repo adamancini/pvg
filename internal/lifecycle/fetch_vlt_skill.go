@@ -13,8 +13,8 @@ import (
 
 const (
 	vltSkillRepo    = "paivot-ai/vlt"
-	vltSkillVersion = "v0.9.0"
-	vltSkillSHA256  = "cf91fe6ea74b97d3da982c3ee402b8df2abeedc7725a4324b74f2da04d4fa888"
+	vltSkillVersion = "v0.9.6"
+	vltSkillSHA256  = "0d52ed8ddeff83f385b6e87b26496360d6a4f82ce16b309f3ad8d7c3533e0e6c"
 	vltSkillDestDir = ".claude/skills/vlt-skill"
 	vltSkillMarker  = "SKILL.md"
 )
