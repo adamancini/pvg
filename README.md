@@ -107,15 +107,30 @@ Called by Claude Code via `hooks.json`. Each reads JSON from stdin and writes st
 | `pvg hook subagent-start` | SubagentStart | Track dispatcher-relevant agent activation (BA, Designer, Architect, Sr PM, Developer, PM) |
 | `pvg hook subagent-stop` | SubagentStop | Track dispatcher-relevant agent deactivation |
 
-### Shared nd workflow
+### nd workflow
 
 ```bash
-pvg nd root --ensure                     # Print/init the live shared nd vault path
-pvg nd ready --json                      # Pass through to nd with the shared vault injected
+pvg nd root --ensure                     # Print/init the nd vault path
+pvg nd ready --json                      # Pass through to nd with --vault injected
 pvg nd update PROJ-a1b --status=open     # Any nd command works without remembering --vault
 ```
 
-`pvg nd` injects the correct shared `--vault` automatically. Use it instead of hand-built shell wrappers or remembered environment variables.
+`pvg nd` resolves the correct vault path and injects `--vault` automatically.
+
+#### Vault resolution order
+
+1. `ND_VAULT_DIR` or `PAIVOT_ND_VAULT` environment variable (highest priority)
+2. `.vault/.nd-shared.yaml` -- explicit shared worktree vault (points to `git commondir`)
+3. Nearest `.vault/` directory walking up the tree (default)
+
+**Local vault is the default.** Shared worktree vaults are opt-in only. To enable shared mode, create `.vault/.nd-shared.yaml`:
+
+```yaml
+mode: git_common_dir
+path: paivot/nd-vault
+```
+
+Without this file, pvg always uses the local `.vault/` directory. Run `pvg doctor` to verify vault resolution is correct.
 
 ### Story helpers
 
@@ -176,6 +191,16 @@ In `--epic` mode it drains the priority epic first, then falls back to the rest 
 The selector is intentionally additive. `paivot-graph` keeps its existing Claude hook flow,
 while Codex and OpenCode can reuse the same evaluation logic instead of carrying their own
 parallel copies of the queue-selection rules.
+
+### Diagnostics
+
+```bash
+pvg doctor              # Check vault config, nd reachability, worktree hygiene
+pvg doctor --json       # Structured output
+pvg doctor --fix        # Auto-repair fixable issues (prune worktrees, nd doctor --fix)
+```
+
+Checks: vault-resolution, nd-reachable, shared-config-consistency, nd-doctor, loop-state, worktree-hygiene.
 
 ### Dispatcher mode
 
