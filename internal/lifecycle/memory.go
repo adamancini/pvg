@@ -34,30 +34,13 @@ type hookOutput struct {
 	SystemMessage string `json:"systemMessage"`
 }
 
-// MemoryRead intercepts Read operations on memory files and supplements with vault knowledge.
-// Reads JSON from stdin, outputs structured response to stdout. Always exits 0 (fail-open).
+// MemoryRead is a no-op. Read operations on memory files do not need vault
+// supplementation -- the memory content is already being read directly. The
+// previous implementation ran a vault search on every memory Read, which was
+// expensive (git exec + vault open + search) and frequently timed out when
+// the vault was on slow storage (iCloud).
 func MemoryRead() error {
-	return handleMemoryOperation("Read", func(input *memoryToolInput, vaultClient *vlt.Vault, projectName string) (string, error) {
-		// Search vault for project-related knowledge
-		searchQuery := projectName
-		if strings.ContainsAny(projectName, " \t\"") {
-			searchQuery = `"` + strings.ReplaceAll(projectName, `"`, `\"`) + `"`
-		}
-
-		results, err := vaultClient.Search(vlt.SearchOptions{Query: searchQuery})
-		if err != nil || len(results) == 0 {
-			// No vault results -- memory read proceeds without supplementation
-			return "", nil
-		}
-
-		// Format search results as system message
-		msg := fmt.Sprintf("[VAULT MEMORY] Vault knowledge related to project %q:\n\n", projectName)
-		for _, r := range results {
-			msg += fmt.Sprintf("- %s (%s)\n", r.Title, r.RelPath)
-		}
-		msg += "\nConsider this alongside the memory file contents."
-		return msg, nil
-	})
+	return nil
 }
 
 // MemoryWrite intercepts Write operations and mirrors full content to vault.
