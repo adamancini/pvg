@@ -16,8 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/paivot-ai/pvg/internal/ndvault"
 )
 
 // stateFile is the filename within .vault/ for dispatcher state.
@@ -76,11 +74,6 @@ func initProjectVault(projectRoot string) {
 
 	// .vault/issues/ for nd
 	_ = os.MkdirAll(filepath.Join(base, "issues"), 0755)
-
-	sharedConfigPath := ndvault.SharedConfigPath(projectRoot)
-	if _, err := os.Stat(sharedConfigPath); os.IsNotExist(err) {
-		_ = os.WriteFile(sharedConfigPath, []byte(ndvault.DefaultSharedConfig()), 0644)
-	}
 
 	// Default .settings.yaml if it doesn't exist
 	settingsPath := filepath.Join(base, "knowledge", ".settings.yaml")

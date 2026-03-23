@@ -89,23 +89,23 @@ func TestCheckNDReachable_Fail(t *testing.T) {
 
 func TestCheckSharedConfigConsistency_NoConfig(t *testing.T) {
 	root := t.TempDir()
-	// No .vault at all -- not paivot-managed, no shared config
+	// No .vault at all -- local vault mode is the default, should pass.
 	f := checkSharedConfigConsistency(root)
-	if f.Status != StatusSkip {
-		t.Fatalf("expected skip, got %s: %s", f.Status, f.Message)
+	if f.Status != StatusPass {
+		t.Fatalf("expected pass (local vault mode is default), got %s: %s", f.Status, f.Message)
 	}
 }
 
 func TestCheckSharedConfigConsistency_PaivotManagedNoShared(t *testing.T) {
 	root := t.TempDir()
-	// Create paivot markers but no .nd-shared.yaml
+	// Create paivot markers but no .nd-shared.yaml -- local vault mode is expected.
 	if err := os.MkdirAll(filepath.Join(root, ".vault", "knowledge"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	f := checkSharedConfigConsistency(root)
-	if f.Status != StatusWarn {
-		t.Fatalf("expected warn, got %s: %s", f.Status, f.Message)
+	if f.Status != StatusPass {
+		t.Fatalf("expected pass (local vault mode is default), got %s: %s", f.Status, f.Message)
 	}
 }
 

@@ -136,11 +136,8 @@ func checkNDReachable() Finding {
 func checkSharedConfigConsistency(projectRoot string) Finding {
 	configPath := ndvault.SharedConfigPath(projectRoot)
 	if _, err := os.Stat(configPath); err != nil {
-		// No shared config. Check if paivot-managed (warn about local mode).
-		if ndvault.IsPaivotManaged(projectRoot) {
-			return Finding{Name: "shared-config-consistency", Status: StatusWarn, Message: "paivot-managed project without .nd-shared.yaml (using local vault mode)"}
-		}
-		return Finding{Name: "shared-config-consistency", Status: StatusSkip, Message: "no shared vault config (local vault mode)"}
+		// No shared config -- local .vault/ mode is the default and expected.
+		return Finding{Name: "shared-config-consistency", Status: StatusPass, Message: "local vault mode (default)"}
 	}
 
 	// Shared config exists -- verify target path exists.
