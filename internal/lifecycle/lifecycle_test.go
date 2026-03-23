@@ -267,16 +267,16 @@ func TestFormatSessionEntry_SingleLink(t *testing.T) {
 	}
 }
 
-func TestCollectSessionLinks_NoVaultDir(t *testing.T) {
+func TestCollectLocalLinks_NoVaultDir(t *testing.T) {
 	dir := t.TempDir()
-	links := collectSessionLinks(dir, "test-project", "2026-02-25")
-	// No .vault/knowledge/ exists, no vault available -- should return empty
+	links := collectLocalLinks(dir, "2026-02-25")
+	// No .vault/knowledge/ exists -- should return empty
 	if len(links) != 0 {
 		t.Errorf("expected empty links, got %v", links)
 	}
 }
 
-func TestCollectSessionLinks_FindsLocalNotes(t *testing.T) {
+func TestCollectLocalLinks_FindsLocalNotes(t *testing.T) {
 	dir := t.TempDir()
 	knowledgeDir := filepath.Join(dir, ".vault", "knowledge", "decisions")
 	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
@@ -289,7 +289,7 @@ func TestCollectSessionLinks_FindsLocalNotes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	links := collectSessionLinks(dir, "test-project", today)
+	links := collectLocalLinks(dir, today)
 	// The note was just created, so its mtime is today
 	found := false
 	for _, l := range links {

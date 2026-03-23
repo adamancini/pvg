@@ -1,9 +1,11 @@
 package lifecycle
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -29,62 +31,56 @@ func SessionEnd() error {
 	// 2. Clear dispatcher state (prevent stale state across sessions)
 	_ = dispatcher.Off(input.CWD)
 
-	// 3. Detect project name
-	project := detectProject(input.CWD)
+	// 3. Detect project name (with timeout to avoid hanging on slow git)
+	project := detectProjectTimeout(input.CWD)
 	today := time.Now().Format("2006-01-02")
 
-	// 4. Collect notes created this session
-	links := collectSessionLinks(input.CWD, project, today)
-	entry := formatSessionEntry(today, links)
-
-	// 5. Try vlt first
+	// 4. Open vault once (reuse for both link collection and append)
 	v, err := vaultcfg.OpenVault()
-	if err == nil {
-		unlock := func() {}
-		if lock, lockErr := vlt.LockVault(v.Dir(), true); lockErr == nil {
-			unlock = lock
-		}
-		defer unlock()
-		_ = v.Append(project, entry, false)
+	if err != nil {
+		// No vault -- collect local links only and write via direct file ops
+		links := collectLocalLinks(input.CWD, today)
+		entry := formatSessionEntry(today, links)
+		writeSessionEntryDirect(input.CWD, project, entry)
 		return nil
 	}
 
-	// 6. Fallback to direct file ops
-	vaultDir, derr := vaultcfg.VaultDir()
-	if derr != nil {
-		return nil // silently skip
-	}
+	// 5. Collect links (local only -- skip vault search to stay within timeout)
+	links := collectLocalLinks(input.CWD, today)
+	entry := formatSessionEntry(today, links)
 
-	projectNote := ""
-	candidates := []string{
-		filepath.Join(vaultDir, "projects", project+".md"),
-		filepath.Join(vaultDir, project+".md"),
+	// 6. Append to project note
+	unlock := func() {}
+	if lock, lockErr := vlt.LockVault(v.Dir(), true); lockErr == nil {
+		unlock = lock
 	}
-	for _, c := range candidates {
-		if _, serr := os.Stat(c); serr == nil {
-			projectNote = c
-			break
-		}
-	}
-
-	if projectNote != "" {
-		f, ferr := os.OpenFile(projectNote, os.O_APPEND|os.O_WRONLY, 0644)
-		if ferr == nil {
-			_, _ = f.WriteString(entry)
-			_ = f.Close()
-		}
-	}
-
+	defer unlock()
+	_ = v.Append(project, entry, false)
 	return nil
 }
 
-// collectSessionLinks finds vault notes created today for this project.
-// Returns a list of note titles suitable for wikilinks.
-func collectSessionLinks(cwd, project, today string) []string {
-	var titles []string
-	seen := map[string]bool{}
+// detectProjectTimeout is like detectProject but with a 3-second timeout
+// on the git exec to avoid hanging during session end.
+func detectProjectTimeout(cwd string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "remote", "get-url", "origin")
+	out, err := cmd.Output()
+	if err == nil {
+		url := strings.TrimSpace(string(out))
+		if url != "" {
+			base := filepath.Base(url)
+			return strings.TrimSuffix(base, ".git")
+		}
+	}
+	return filepath.Base(cwd)
+}
 
-	// 1. Scan project vault for files modified today
+// collectLocalLinks scans project-local .vault/knowledge/ for files modified
+// today. Unlike collectSessionLinks, it skips the global vault search to stay
+// well within the hook timeout budget.
+func collectLocalLinks(cwd, today string) []string {
+	var titles []string
 	knowledgeDir := filepath.Join(cwd, ".vault", "knowledge")
 	if info, err := os.Stat(knowledgeDir); err == nil && info.IsDir() {
 		_ = filepath.Walk(knowledgeDir, func(path string, fi os.FileInfo, err error) error {
@@ -92,35 +88,33 @@ func collectSessionLinks(cwd, project, today string) []string {
 				return nil
 			}
 			if fi.ModTime().Format("2006-01-02") == today {
-				title := strings.TrimSuffix(fi.Name(), ".md")
-				if !seen[title] {
-					seen[title] = true
-					titles = append(titles, title)
-				}
+				titles = append(titles, strings.TrimSuffix(fi.Name(), ".md"))
 			}
 			return nil
 		})
 	}
+	return titles
+}
 
-	// 2. Search global vault for notes created today for this project
-	v, err := vaultcfg.OpenVault()
+// writeSessionEntryDirect appends to the project note via direct file ops
+// (no vault dependency). Used as fallback when the vault is unavailable.
+func writeSessionEntryDirect(cwd, project, entry string) {
+	vaultDir, err := vaultcfg.VaultDir()
 	if err != nil {
-		return titles
+		return
 	}
-	results, err := v.Search(vlt.SearchOptions{
-		Query: buildSessionSearchQuery(project, today),
-	})
-	if err != nil {
-		return titles
-	}
-	for _, r := range results {
-		if !seen[r.Title] {
-			seen[r.Title] = true
-			titles = append(titles, r.Title)
+	for _, c := range []string{
+		filepath.Join(vaultDir, "projects", project+".md"),
+		filepath.Join(vaultDir, project+".md"),
+	} {
+		if _, serr := os.Stat(c); serr == nil {
+			if f, ferr := os.OpenFile(c, os.O_APPEND|os.O_WRONLY, 0644); ferr == nil {
+				_, _ = f.WriteString(entry)
+				_ = f.Close()
+			}
+			return
 		}
 	}
-
-	return titles
 }
 
 func buildSessionSearchQuery(project, today string) string {
