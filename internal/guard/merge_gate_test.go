@@ -467,6 +467,135 @@ func runGitOutput(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
+// --- Bug merge policy tests ---
+
+func TestCheckMergeGate_AllowsBugWithoutParentIntoMain(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Test User")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+	// Stay on main branch
+
+	writeProjectSettings(t, repo)
+	sharedVault := filepath.Join(repo, ".git", "paivot", "nd-vault")
+	issuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(issuesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Bug with no parent epic
+	content := "---\ntitle: Fix crash\ntype: bug\nstatus: closed\nlabels: [delivered, accepted]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-bug1.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(repo, "git merge --no-ff origin/story/PROJ-bug1 -m \"merge\"")
+	if !r.Allowed {
+		t.Fatalf("expected bug without parent to be allowed into main, got: %s", r.Reason)
+	}
+}
+
+func TestCheckMergeGate_AllowsBugWithoutParentIntoEpic(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Test User")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+	runGit(t, repo, "checkout", "-b", "epic/PROJ-some-epic")
+
+	writeProjectSettings(t, repo)
+	sharedVault := filepath.Join(repo, ".git", "paivot", "nd-vault")
+	issuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(issuesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Bug with no parent epic, merging into an epic branch
+	content := "---\ntitle: Fix crash\ntype: bug\nstatus: closed\nlabels: [delivered, accepted]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-bug1.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(repo, "git merge --no-ff origin/story/PROJ-bug1 -m \"merge\"")
+	if !r.Allowed {
+		t.Fatalf("expected bug without parent to be allowed into epic, got: %s", r.Reason)
+	}
+}
+
+func TestCheckMergeGate_StillBlocksTaskWithoutParent(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Test User")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+	runGit(t, repo, "checkout", "-b", "epic/PROJ-some-epic")
+
+	writeProjectSettings(t, repo)
+	sharedVault := filepath.Join(repo, ".git", "paivot", "nd-vault")
+	issuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(issuesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Task (not bug) with no parent -- should still be blocked
+	content := "---\ntitle: Some task\ntype: task\nstatus: closed\nlabels: [delivered, accepted]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-task1.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckMergeGate(repo, "git merge --no-ff origin/story/PROJ-task1 -m \"merge\"")
+	if r.Allowed {
+		t.Fatal("expected task without parent to still be blocked")
+	}
+}
+
+func TestCheckMergeGate_ChainedCheckoutAndMerge(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Test User")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "init")
+	runGit(t, repo, "checkout", "-b", "epic/PROJ-epic1")
+	runGit(t, repo, "checkout", "-b", "story/PROJ-a1b2")
+	// Current branch is story/PROJ-a1b2 -- without the fix, the guard would
+	// see "story/*" as current and block with "must merge into epic branches"
+
+	writeProjectSettings(t, repo)
+	sharedVault := filepath.Join(repo, ".git", "paivot", "nd-vault")
+	issuesDir := filepath.Join(sharedVault, "issues")
+	if err := os.MkdirAll(issuesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: Test\nstatus: closed\nparent: PROJ-epic1\nlabels: [delivered, accepted]\n---\nBody"
+	if err := os.WriteFile(filepath.Join(issuesDir, "PROJ-a1b2.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Chained command: checkout epic then merge story
+	r := CheckMergeGate(repo, "git checkout epic/PROJ-epic1 && git merge --no-ff origin/story/PROJ-a1b2 -m \"merge\"")
+	if !r.Allowed {
+		t.Fatalf("expected chained checkout+merge to use checkout target, got: %s", r.Reason)
+	}
+}
+
 // --- ReadIssueLabels tests ---
 
 func TestReadIssueLabels_ValidLabels(t *testing.T) {

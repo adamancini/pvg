@@ -16,6 +16,7 @@ import (
 var gitIntegrationRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?git\s+(merge|pull|rebase|cherry-pick)\b`)
 var storyRefRe = regexp.MustCompile(`(?:^|[\s"'=])(?:refs/(?:remotes/origin|heads)/|origin/)?story/([A-Za-z0-9._-]+)`)
 var shaRefRe = regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
+var gitCheckoutRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?git\s+checkout\s+([\w/.-]+)`)
 
 const mergeGateBlockMsg = "BLOCKED: Cannot merge story branch before PM-Acceptor completion.\n\n" +
 	"Story %s must be both labeled 'accepted' and closed in nd before merge.\n" +
@@ -86,8 +87,19 @@ func CheckMergeGate(projectRoot, command string) Result {
 		}
 
 		parentEpic := ReadIssueParent(projectRoot, storyID)
-		if targetBranch, ok := currentBranch(projectRoot); ok {
+		issueType := ReadIssueType(projectRoot, storyID)
+
+		// Determine effective target branch: if the command contains
+		// "git checkout <branch>" before the merge, use that branch
+		// instead of the current HEAD (which hasn't changed yet because
+		// the PreToolUse hook fires before the command executes).
+		targetBranch, ok := effectiveTargetBranch(projectRoot, command)
+		if ok {
 			if !strings.HasPrefix(targetBranch, "epic/") {
+				// Bugs without a parent epic are allowed to merge into main.
+				if issueType == "bug" && parentEpic == "" && targetBranch == "main" {
+					continue
+				}
 				next := "the owning epic branch"
 				if parentEpic != "" {
 					next = "epic/" + parentEpic
@@ -102,6 +114,10 @@ func CheckMergeGate(projectRoot, command string) Result {
 			}
 
 			if parentEpic == "" {
+				// Bugs without a parent epic are allowed to merge into any epic branch.
+				if issueType == "bug" {
+					continue
+				}
 				return Result{
 					Allowed: false,
 					Reason: fmt.Sprintf(
@@ -327,6 +343,41 @@ func currentBranch(projectRoot string) (string, bool) {
 		return "", false
 	}
 	return branch, true
+}
+
+// effectiveTargetBranch returns the branch that will be current when the merge
+// executes. If the command contains "git checkout <branch> && git merge ...",
+// the checkout target is returned instead of the actual current branch. This
+// fixes the PreToolUse timing issue where the hook fires before the chained
+// command executes.
+func effectiveTargetBranch(projectRoot, command string) (string, bool) {
+	if matches := gitCheckoutRe.FindStringSubmatch(command); len(matches) > 1 {
+		target := strings.TrimSpace(matches[1])
+		// Only trust the checkout target if it looks like a branch name
+		// (not a flag like -b or --detach)
+		if target != "" && !strings.HasPrefix(target, "-") {
+			return target, true
+		}
+	}
+	return currentBranch(projectRoot)
+}
+
+// ReadIssueType reads the type from an nd issue's frontmatter.
+// Returns "" on any error or when no type is recorded.
+func ReadIssueType(projectRoot, issueID string) string {
+	frontmatter, ok := readIssueFrontmatter(projectRoot, issueID)
+	if !ok {
+		return ""
+	}
+
+	for _, line := range strings.Split(frontmatter, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "type:") {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "type:")), `"'`)
+	}
+	return ""
 }
 
 func isLoopActiveFrom(projectRoot string) bool {
