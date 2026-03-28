@@ -125,6 +125,25 @@ func IsActive(projectRoot string) bool {
 	return state.Active
 }
 
+// Rotate transitions the loop from the current epic to the next one.
+// It appends the current epic to CompletedEpics, sets TargetEpic to nextEpic,
+// and resets the wait counters for the new epic.
+func Rotate(projectRoot, nextEpic string) error {
+	state, err := ReadState(projectRoot)
+	if err != nil {
+		return fmt.Errorf("read loop state: %w", err)
+	}
+	if !state.Active {
+		return fmt.Errorf("no active loop to rotate")
+	}
+	if state.TargetEpic != "" {
+		state.CompletedEpics = append(state.CompletedEpics, state.TargetEpic)
+	}
+	state.TargetEpic = nextEpic
+	state.ConsecutiveWaits = 0
+	return WriteState(projectRoot, state)
+}
+
 // IsActiveFrom checks for an active loop state in the caller directory or any
 // ancestor directory. This lets nested worktrees reuse the orchestrator state.
 func IsActiveFrom(start string) bool {

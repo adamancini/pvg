@@ -425,7 +425,7 @@ Execution priority is structural, enforced by pvg loop next --json:
   6. No cherry-picking. No cross-epic work. The epic is a containment boundary.
 
 Do not re-implement that ordering yourself. Run pvg loop next --json each iteration.
-It returns a JSON decision (act, epic_complete, epic_blocked, wait, rotate, complete)
+It returns a JSON decision (act, epic_complete, epic_blocked, wait, complete)
 that tells you exactly what to do next.
 
 ## D&F ORCHESTRATION

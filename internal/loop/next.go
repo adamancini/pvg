@@ -31,7 +31,7 @@ type NextResult struct {
 	Reason        string      `json:"reason"`
 	Counts        WorkCounts  `json:"counts"`
 	Next          *NextAction `json:"next,omitempty"`
-	NextEpic      string      `json:"next_epic,omitempty"` // populated on "rotate" decision
+	NextEpic      string      `json:"next_epic,omitempty"` // populated on "epic_complete" when a next epic exists
 	NextEpicTitle string      `json:"next_epic_title,omitempty"`
 }
 

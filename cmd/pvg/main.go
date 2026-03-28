@@ -589,6 +589,8 @@ func runLoop(args []string) error {
 		return loopSnapshot(cwd, args[1:])
 	case "recover":
 		return loopRecover(cwd, args[1:])
+	case "rotate":
+		return loopRotate(cwd, args[1:])
 	default:
 		loopUsage()
 		return fmt.Errorf("unknown loop subcommand %q", args[0])
@@ -603,6 +605,7 @@ Subcommands:
 	cancel          Cancel active execution loop
 	status          Show execution loop state
   next            Select the next orchestration action
+	rotate EPIC_ID  Rotate loop to the next epic after completion gate
 	snapshot        Checkpoint active agent/worktree state
 	recover         Clean up after context loss
 
@@ -887,6 +890,30 @@ func loopNext(cwd string, args []string) error {
 		}
 		fmt.Println()
 	}
+	return nil
+}
+
+func loopRotate(cwd string, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("pvg loop rotate requires EPIC_ID argument")
+	}
+	epicID := args[0]
+
+	if err := loop.ValidateEpic(cwd, epicID); err != nil {
+		return fmt.Errorf("validate epic: %w", err)
+	}
+
+	state, err := loop.ReadState(cwd)
+	if err != nil {
+		return fmt.Errorf("read loop state: %w", err)
+	}
+
+	prev := state.TargetEpic
+	if err := loop.Rotate(cwd, epicID); err != nil {
+		return err
+	}
+
+	fmt.Printf("[LOOP] Rotated: %s -> %s\n", prev, epicID)
 	return nil
 }
 

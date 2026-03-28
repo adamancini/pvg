@@ -266,3 +266,95 @@ func TestIsActiveFrom_TrueWhenAncestorStateExists(t *testing.T) {
 		t.Fatal("expected nested worktree to detect ancestor loop state")
 	}
 }
+
+func TestRotate_TransitionsEpic(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".vault"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState("epic", "EPIC-old", 0)
+	state.AutoRotate = true
+	state.ConsecutiveWaits = 2
+	if err := WriteState(dir, state); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Rotate(dir, "EPIC-new"); err != nil {
+		t.Fatalf("Rotate() error: %v", err)
+	}
+
+	restored, err := ReadState(dir)
+	if err != nil {
+		t.Fatalf("ReadState() error: %v", err)
+	}
+
+	if restored.TargetEpic != "EPIC-new" {
+		t.Errorf("expected target_epic=EPIC-new, got %s", restored.TargetEpic)
+	}
+	if len(restored.CompletedEpics) != 1 || restored.CompletedEpics[0] != "EPIC-old" {
+		t.Errorf("expected completed_epics=[EPIC-old], got %v", restored.CompletedEpics)
+	}
+	if restored.ConsecutiveWaits != 0 {
+		t.Errorf("expected consecutive_waits reset to 0, got %d", restored.ConsecutiveWaits)
+	}
+	if !restored.Active {
+		t.Error("expected loop to remain active after rotation")
+	}
+}
+
+func TestRotate_AccumulatesCompletedEpics(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".vault"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState("epic", "EPIC-1", 0)
+	state.CompletedEpics = []string{"EPIC-0"}
+	if err := WriteState(dir, state); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Rotate(dir, "EPIC-2"); err != nil {
+		t.Fatalf("Rotate() error: %v", err)
+	}
+
+	restored, err := ReadState(dir)
+	if err != nil {
+		t.Fatalf("ReadState() error: %v", err)
+	}
+
+	if len(restored.CompletedEpics) != 2 {
+		t.Fatalf("expected 2 completed epics, got %d", len(restored.CompletedEpics))
+	}
+	if restored.CompletedEpics[0] != "EPIC-0" || restored.CompletedEpics[1] != "EPIC-1" {
+		t.Errorf("expected completed_epics=[EPIC-0, EPIC-1], got %v", restored.CompletedEpics)
+	}
+	if restored.TargetEpic != "EPIC-2" {
+		t.Errorf("expected target_epic=EPIC-2, got %s", restored.TargetEpic)
+	}
+}
+
+func TestRotate_FailsWhenInactive(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".vault"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState("epic", "EPIC-old", 0)
+	state.Active = false
+	if err := WriteState(dir, state); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Rotate(dir, "EPIC-new"); err == nil {
+		t.Error("expected Rotate() to fail when loop is inactive")
+	}
+}
+
+func TestRotate_FailsWhenNoState(t *testing.T) {
+	dir := t.TempDir()
+	if err := Rotate(dir, "EPIC-new"); err == nil {
+		t.Error("expected Rotate() to fail when no state file exists")
+	}
+}
