@@ -18,6 +18,7 @@ pvg seed [--force]           # Seed vault with agent prompts and conventions
 pvg loop setup --all         # Start unattended execution loop
 pvg loop snapshot            # Checkpoint active agent/worktree state
 pvg loop recover             # Clean up after context loss
+pvg worktree remove <path>   # Safely remove a worktree (CWD-independent)
 pvg version                  # Print version
 ```
 
@@ -192,6 +193,21 @@ The selector is intentionally additive. `paivot-graph` keeps its existing Claude
 while Codex and OpenCode can reuse the same evaluation logic instead of carrying their own
 parallel copies of the queue-selection rules.
 
+### Worktree safety
+
+```bash
+pvg worktree remove .claude/worktrees/dev-PROJ-a1b          # Remove worktree safely
+pvg worktree remove .claude/worktrees/dev-PROJ-a1b --json   # JSON output
+```
+
+`pvg worktree remove` resolves the project root from the worktree path itself (by parsing
+the `.claude/worktrees/` convention), not from the current working directory. This makes it
+immune to the CWD-corruption failure where the shell CWD drifts into a worktree that is then
+removed, making the entire session unrecoverable.
+
+After removal, it always runs `git worktree prune` to clean stale metadata. If the worktree
+directory is already gone, it prunes instead of erroring.
+
 ### Diagnostics
 
 ```bash
@@ -247,6 +263,7 @@ internal/
   lifecycle/           Session hooks (start, pre-compact, stop, end, user-prompt, subagent)
   loop/                Execution loop (setup, evaluate, cancel, snapshot, recover)
   story/               Shared story transitions, delivery checks, merge path
+  worktree/            Safe worktree operations (CWD-independent removal)
   settings/            Project settings (YAML read/write)
   vaultcfg/            Vault discovery and configuration
 ```

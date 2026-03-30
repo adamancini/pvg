@@ -24,6 +24,7 @@
 //	pvg loop next --json         # Select the next orchestration action
 //	pvg loop snapshot            # Checkpoint agent/worktree state
 //	pvg loop recover             # Clean up after context loss
+//	pvg worktree remove <path>   # Safely remove a worktree (CWD-independent)
 //	pvg fetch-vlt-skill [--force] # Download and install vlt skill
 //	pvg verify [path...] [flags] # Scan for stubs, thin files, TODOs
 //	pvg doctor [--json] [--fix]  # Run diagnostic checks
@@ -53,6 +54,7 @@ import (
 	"github.com/paivot-ai/pvg/internal/story"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
 	"github.com/paivot-ai/pvg/internal/verify"
+	"github.com/paivot-ai/pvg/internal/worktree"
 )
 
 // Set at build time via -ldflags "-X main.version=..."
@@ -130,6 +132,8 @@ func main() {
 		err = runRTM(args)
 	case "verify":
 		err = runVerify(args)
+	case "worktree":
+		err = runWorktree(args)
 	case "doctor":
 		err = runDoctor(args)
 	case "fetch-vlt-skill":
@@ -184,6 +188,7 @@ Commands:
   lint [--json]             Check backlog for artifact collisions (PRODUCES)
   rtm [check] [--json]      Requirement Traceability Matrix (D&F coverage check)
   verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
+  worktree remove <path>   Safely remove a worktree (CWD-independent)
   doctor [--json] [--fix]  Run diagnostic checks on vault configuration
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
@@ -1263,6 +1268,79 @@ Exit code 0 if clean, 1 if issues found.`)
 
 	if !result.Passed {
 		os.Exit(1)
+	}
+	return nil
+}
+
+func runWorktree(args []string) error {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, `pvg worktree -- safe worktree operations
+
+Subcommands:
+  remove <path> [--json]   Remove a worktree safely (resolves project root from path, not CWD)
+
+The remove command uses the worktree path to find the project root, so it works
+even when the shell CWD has drifted into a deleted worktree. It always prunes
+stale worktree metadata after removal.`)
+		return cliExit{code: 1}
+	}
+
+	switch args[0] {
+	case "remove":
+		return worktreeRemove(args[1:])
+	case "--help", "-h":
+		fmt.Fprintln(os.Stderr, `pvg worktree -- safe worktree operations
+
+Subcommands:
+  remove <path> [--json]   Remove a worktree safely`)
+		return nil
+	default:
+		return fmt.Errorf("unknown worktree subcommand %q (try: remove)", args[0])
+	}
+}
+
+func worktreeRemove(args []string) error {
+	jsonOutput := false
+	var wtPath string
+
+	for _, arg := range args {
+		switch {
+		case arg == "--json":
+			jsonOutput = true
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(os.Stderr, `pvg worktree remove <path> [--json]
+
+Safely remove a git worktree. Resolves the project root from the worktree path
+itself (not from CWD), making it immune to CWD corruption.
+
+After removal, runs git worktree prune to clean up stale metadata.
+
+If the worktree directory is already gone, prunes stale metadata instead.`)
+			return nil
+		case strings.HasPrefix(arg, "-"):
+			return fmt.Errorf("unknown flag %q", arg)
+		default:
+			if wtPath != "" {
+				return fmt.Errorf("expected exactly one worktree path, got extra argument %q", arg)
+			}
+			wtPath = arg
+		}
+	}
+
+	if wtPath == "" {
+		return fmt.Errorf("missing worktree path (usage: pvg worktree remove <path>)")
+	}
+
+	result := worktree.SafeRemove(wtPath)
+
+	if jsonOutput {
+		fmt.Println(result.FormatJSON())
+	} else {
+		fmt.Println(result.FormatText())
+	}
+
+	if result.Error != "" {
+		return cliExit{code: 1}
 	}
 	return nil
 }

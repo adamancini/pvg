@@ -1,0 +1,143 @@
+// Package worktree provides safe git worktree operations that resolve the
+// project root from the worktree path itself, not from CWD. This prevents
+// the CWD-corruption failure mode where removing a worktree while the shell
+// CWD is inside it makes the session unrecoverable.
+package worktree
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+// RemoveResult is the JSON output of a safe-remove operation.
+type RemoveResult struct {
+	Removed      bool   `json:"removed"`
+	WorktreePath string `json:"worktree_path"`
+	ProjectRoot  string `json:"project_root"`
+	Pruned       bool   `json:"pruned"`
+	Error        string `json:"error,omitempty"`
+}
+
+// For testing: allow mocking exec.Command.
+var execCommand = exec.Command
+
+// ResolveProjectRoot derives the project root from a worktree path.
+// It walks up from the given path looking for a .git directory (file or dir).
+// This does NOT use os.Getwd(), making it immune to CWD corruption.
+func ResolveProjectRoot(worktreePath string) (string, error) {
+	abs, err := filepath.Abs(worktreePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute path: %w", err)
+	}
+
+	// Strategy 1: If path contains .claude/worktrees/, the project root is
+	// the parent of .claude/. This is the Paivot convention and catches 100%
+	// of dispatcher-created worktrees.
+	if idx := strings.Index(abs, string(filepath.Separator)+".claude"+string(filepath.Separator)+"worktrees"+string(filepath.Separator)); idx >= 0 {
+		root := abs[:idx]
+		if isGitRoot(root) {
+			return root, nil
+		}
+	}
+
+	// Strategy 2: Use git to resolve the common dir from the worktree path.
+	// git rev-parse --git-common-dir returns the shared .git dir.
+	// Run with -C to avoid depending on CWD.
+	if isDir(abs) {
+		cmd := execCommand("git", "-C", abs, "rev-parse", "--git-common-dir")
+		out, err := cmd.Output()
+		if err == nil {
+			commonDir := strings.TrimSpace(string(out))
+			if !filepath.IsAbs(commonDir) {
+				commonDir = filepath.Join(abs, commonDir)
+			}
+			commonDir = filepath.Clean(commonDir)
+			// .git/worktrees/<name> -> .git -> parent is project root
+			// .git (if already the git dir) -> parent is project root
+			root := filepath.Dir(commonDir)
+			if isGitRoot(root) {
+				return root, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("cannot resolve project root from worktree path %q: no .claude/worktrees/ convention found and git resolution failed", abs)
+}
+
+// SafeRemove removes a git worktree by resolving the project root from the
+// worktree path, then running git operations from that root. It always prunes
+// stale worktree metadata afterward.
+func SafeRemove(worktreePath string) RemoveResult {
+	result := RemoveResult{
+		WorktreePath: worktreePath,
+	}
+
+	root, err := ResolveProjectRoot(worktreePath)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.ProjectRoot = root
+
+	// Remove the worktree using -C to run from the project root.
+	cmd := execCommand("git", "-C", root, "worktree", "remove", "--force", worktreePath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		// If the directory doesn't exist, try prune instead (stale metadata).
+		if !isDir(worktreePath) {
+			pruneCmd := execCommand("git", "-C", root, "worktree", "prune")
+			if _, pruneErr := pruneCmd.CombinedOutput(); pruneErr == nil {
+				result.Removed = true
+				result.Pruned = true
+				return result
+			}
+		}
+		result.Error = fmt.Sprintf("git worktree remove: %s (%v)", strings.TrimSpace(string(out)), err)
+		return result
+	}
+	result.Removed = true
+
+	// Always prune to clean up any stale metadata.
+	pruneCmd := execCommand("git", "-C", root, "worktree", "prune")
+	if _, err := pruneCmd.CombinedOutput(); err == nil {
+		result.Pruned = true
+	}
+
+	return result
+}
+
+// FormatJSON returns the result as indented JSON.
+func (r RemoveResult) FormatJSON() string {
+	data, _ := json.MarshalIndent(r, "", "  ")
+	return string(data)
+}
+
+// FormatText returns a human-readable summary.
+func (r RemoveResult) FormatText() string {
+	if r.Error != "" {
+		return fmt.Sprintf("FAIL: %s", r.Error)
+	}
+	msg := fmt.Sprintf("Removed worktree %s (project root: %s)", r.WorktreePath, r.ProjectRoot)
+	if r.Pruned {
+		msg += " [pruned]"
+	}
+	return msg
+}
+
+func isGitRoot(path string) bool {
+	gitPath := filepath.Join(path, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return false
+	}
+	// .git can be a directory (normal repo) or file (worktree pointer)
+	return info.IsDir() || info.Mode().IsRegular()
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
