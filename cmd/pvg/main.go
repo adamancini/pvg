@@ -132,7 +132,7 @@ func main() {
 		err = runRTM(args)
 	case "verify":
 		err = runVerify(args)
-	case "worktree":
+	case "worktree", "wt":
 		err = runWorktree(args)
 	case "doctor":
 		err = runDoctor(args)
@@ -188,7 +188,7 @@ Commands:
   lint [--json]             Check backlog for artifact collisions (PRODUCES)
   rtm [check] [--json]      Requirement Traceability Matrix (D&F coverage check)
   verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
-  worktree remove <path>   Safely remove a worktree (CWD-independent)
+  worktree remove <path>   Safely remove a worktree (CWD-independent) [alias: wt]
   doctor [--json] [--fix]  Run diagnostic checks on vault configuration
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
