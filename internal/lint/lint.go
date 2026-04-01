@@ -32,8 +32,19 @@ type LintResult struct {
 	Passed     bool        `json:"passed"`
 }
 
+// IssueData holds parsed fields from an nd issue file.
+type IssueData struct {
+	ID          string
+	Status      string
+	Produces    []string
+	BlockedBy   []string // from blocked_by and was_blocked_by frontmatter
+	ConsumeRefs []string // upstream story IDs from CONSUMES entries
+}
+
 // CheckArtifactCollisions scans all non-closed issues in the nd vault for
-// PRODUCES blocks and reports any artifact claimed by more than one story.
+// PRODUCES blocks and reports any artifact claimed by more than one story,
+// excluding sequential modification chains (where one story is blocked_by
+// or CONSUMES from the other).
 func CheckArtifactCollisions(vaultDir string) (LintResult, error) {
 	issuesDir := filepath.Join(vaultDir, "issues")
 	entries, err := os.ReadDir(issuesDir)
@@ -46,6 +57,8 @@ func CheckArtifactCollisions(vaultDir string) (LintResult, error) {
 
 	// artifact path -> list of entries
 	artifactMap := make(map[string][]ArtifactEntry)
+	// story ID -> parsed issue data (for chain detection)
+	issueMap := make(map[string]IssueData)
 	storiesScanned := 0
 
 	for _, entry := range entries {
@@ -54,27 +67,28 @@ func CheckArtifactCollisions(vaultDir string) (LintResult, error) {
 		}
 
 		path := filepath.Join(issuesDir, entry.Name())
-		id, status, produces, err := parseIssueFile(path)
+		data, err := parseIssueFile(path)
 		if err != nil {
 			continue // skip unparseable files
 		}
 
 		// Skip closed issues and epics (no PRODUCES)
-		if strings.EqualFold(status, "closed") {
+		if strings.EqualFold(data.Status, "closed") {
 			continue
 		}
 
 		storiesScanned++
+		issueMap[data.ID] = data
 
-		for _, artifact := range produces {
+		for _, artifact := range data.Produces {
 			normalized := normalizeArtifact(artifact)
 			if normalized == "" {
 				continue
 			}
 			artifactMap[normalized] = append(artifactMap[normalized], ArtifactEntry{
 				Artifact: artifact,
-				StoryID:  id,
-				Status:   status,
+				StoryID:  data.ID,
+				Status:   data.Status,
 			})
 		}
 	}
@@ -87,12 +101,26 @@ func CheckArtifactCollisions(vaultDir string) (LintResult, error) {
 		for _, e := range entries {
 			uniqueStories[e.StoryID] = true
 		}
-		if len(uniqueStories) > 1 {
-			collisions = append(collisions, Collision{
-				Artifact: entries[0].Artifact,
-				Stories:  dedupByStory(entries),
-			})
+		if len(uniqueStories) <= 1 {
+			continue
 		}
+
+		// Check if all producing stories form a dependency chain.
+		// If Story B is blocked_by Story A or CONSUMES from Story A,
+		// they can both PRODUCE the same file (sequential modification).
+		storyIDs := make([]string, 0, len(uniqueStories))
+		for id := range uniqueStories {
+			storyIDs = append(storyIDs, id)
+		}
+
+		if allChained(storyIDs, issueMap) {
+			continue // sequential modification chain, not a collision
+		}
+
+		collisions = append(collisions, Collision{
+			Artifact: entries[0].Artifact,
+			Stories:  dedupByStory(entries),
+		})
 	}
 
 	return LintResult{
@@ -101,6 +129,56 @@ func CheckArtifactCollisions(vaultDir string) (LintResult, error) {
 		Stories:    storiesScanned,
 		Passed:     len(collisions) == 0,
 	}, nil
+}
+
+// allChained returns true if every pair of stories can be ordered by
+// transitive dependency (blocked_by or CONSUMES), meaning they form
+// a sequential modification chain on the same file.
+func allChained(storyIDs []string, allIssues map[string]IssueData) bool {
+	// Compute transitive reachability for each story in the group,
+	// walking the full dependency graph (not just the artifact group).
+	reachable := make(map[string]map[string]bool, len(storyIDs))
+	for _, id := range storyIDs {
+		reachable[id] = transitiveReach(id, allIssues)
+	}
+
+	// Every pair must be ordered: one transitively depends on the other.
+	for i := 0; i < len(storyIDs); i++ {
+		for j := i + 1; j < len(storyIDs); j++ {
+			a, b := storyIDs[i], storyIDs[j]
+			if !reachable[a][b] && !reachable[b][a] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// transitiveReach returns the set of all story IDs that id transitively
+// depends on (via blocked_by, was_blocked_by, or CONSUMES references).
+func transitiveReach(id string, allIssues map[string]IssueData) map[string]bool {
+	reached := make(map[string]bool)
+	var visit func(string)
+	visit = func(current string) {
+		data, ok := allIssues[current]
+		if !ok {
+			return
+		}
+		for _, dep := range data.BlockedBy {
+			if !reached[dep] {
+				reached[dep] = true
+				visit(dep)
+			}
+		}
+		for _, ref := range data.ConsumeRefs {
+			if !reached[ref] {
+				reached[ref] = true
+				visit(ref)
+			}
+		}
+	}
+	visit(id)
+	return reached
 }
 
 // FormatText returns a human-readable lint report.
@@ -132,11 +210,13 @@ func FormatJSON(r LintResult) (string, error) {
 }
 
 // parseIssueFile reads an nd issue markdown file and extracts the ID,
-// status, and PRODUCES entries from it.
-func parseIssueFile(path string) (id, status string, produces []string, err error) {
+// status, PRODUCES entries, blocked_by dependencies, and CONSUMES refs.
+func parseIssueFile(path string) (IssueData, error) {
+	var data IssueData
+
 	f, err := os.Open(path)
 	if err != nil {
-		return "", "", nil, err
+		return data, err
 	}
 	defer f.Close()
 
@@ -144,6 +224,7 @@ func parseIssueFile(path string) (id, status string, produces []string, err erro
 	inFrontmatter := false
 	frontmatterDone := false
 	inProducesBlock := false
+	inConsumesBlock := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -162,27 +243,34 @@ func parseIssueFile(path string) (id, status string, produces []string, err erro
 				if kv := parseFrontmatterLine(line); kv != nil {
 					switch kv[0] {
 					case "id":
-						id = kv[1]
+						data.ID = kv[1]
 					case "status":
-						status = kv[1]
+						data.Status = kv[1]
+					case "blocked_by", "was_blocked_by":
+						data.BlockedBy = append(data.BlockedBy, parseYAMLList(kv[1])...)
 					}
 				}
 			}
 			continue
 		}
 
-		// Parse body for PRODUCES blocks
+		// Parse body for PRODUCES and CONSUMES blocks
 		trimmed := strings.TrimSpace(line)
 
 		if strings.EqualFold(trimmed, "PRODUCES:") || strings.HasPrefix(strings.ToUpper(trimmed), "PRODUCES:") {
 			inProducesBlock = true
+			inConsumesBlock = false
 			continue
 		}
 
-		// End of PRODUCES block: blank line, another section header, or CONSUMES
+		if strings.EqualFold(trimmed, "CONSUMES:") || strings.HasPrefix(strings.ToUpper(trimmed), "CONSUMES:") {
+			inConsumesBlock = true
+			inProducesBlock = false
+			continue
+		}
+
 		if inProducesBlock {
 			if trimmed == "" ||
-				strings.HasPrefix(strings.ToUpper(trimmed), "CONSUMES:") ||
 				(len(trimmed) > 0 && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, " ")) {
 				inProducesBlock = false
 				continue
@@ -191,19 +279,34 @@ func parseIssueFile(path string) (id, status string, produces []string, err erro
 			if strings.HasPrefix(trimmed, "-") {
 				entry := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
 				if entry != "" {
-					produces = append(produces, entry)
+					data.Produces = append(data.Produces, entry)
+				}
+			}
+		}
+
+		if inConsumesBlock {
+			if trimmed == "" ||
+				(len(trimmed) > 0 && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, " ")) {
+				inConsumesBlock = false
+				continue
+			}
+
+			if strings.HasPrefix(trimmed, "-") {
+				entry := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
+				if ref := extractConsumeRef(entry); ref != "" {
+					data.ConsumeRefs = append(data.ConsumeRefs, ref)
 				}
 			}
 		}
 	}
 
 	// Fallback: derive ID from filename
-	if id == "" {
+	if data.ID == "" {
 		base := filepath.Base(path)
-		id = strings.TrimSuffix(base, ".md")
+		data.ID = strings.TrimSuffix(base, ".md")
 	}
 
-	return id, status, produces, scanner.Err()
+	return data, scanner.Err()
 }
 
 // parseFrontmatterLine extracts key-value from "key: value" lines.
@@ -215,6 +318,46 @@ func parseFrontmatterLine(line string) []string {
 	key := strings.TrimSpace(parts[0])
 	value := strings.TrimSpace(parts[1])
 	return []string{key, value}
+}
+
+// parseYAMLList parses "[item1, item2]" into a string slice.
+func parseYAMLList(s string) []string {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "[") || !strings.HasSuffix(s, "]") {
+		return nil
+	}
+	s = s[1 : len(s)-1] // strip brackets
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// extractConsumeRef extracts the upstream story ID from a CONSUMES entry.
+// Format: "PROJ-abc: file -> function()" returns "PROJ-abc".
+// Entries starting with "(" like "(existing)" or "(none)" return "".
+func extractConsumeRef(entry string) string {
+	entry = strings.TrimSpace(entry)
+	if strings.HasPrefix(entry, "(") {
+		return "" // skip (existing), (none -- leaf story), etc.
+	}
+	parts := strings.SplitN(entry, ":", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	ref := strings.TrimSpace(parts[0])
+	if ref == "" {
+		return ""
+	}
+	return ref
 }
 
 // dedupByStory keeps one entry per story for collision reporting.

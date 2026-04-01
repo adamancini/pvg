@@ -96,6 +96,161 @@ PRODUCES:
 	}
 }
 
+func TestCheckArtifactCollisions_BlockedByChainNoCollision(t *testing.T) {
+	vault := t.TempDir()
+	// Story A creates the file
+	writeIssue(t, vault, "PROJ-a1b.md", `---
+id: PROJ-a1b
+status: open
+type: task
+---
+PRODUCES:
+- src/auth.ts -> AuthService class (initial implementation)
+`)
+	// Story B modifies the same file, blocked_by A
+	writeIssue(t, vault, "PROJ-c3d.md", `---
+id: PROJ-c3d
+status: open
+type: task
+blocked_by: [PROJ-a1b]
+---
+PRODUCES:
+- src/auth.ts -> AuthService.refreshToken() (extends AuthService)
+
+CONSUMES:
+- PROJ-a1b: src/auth.ts -> AuthService class
+`)
+
+	result, err := CheckArtifactCollisions(vault)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Passed {
+		t.Fatalf("expected passed (blocked_by chain), got %d collisions", len(result.Collisions))
+	}
+}
+
+func TestCheckArtifactCollisions_ConsumesChainNoCollision(t *testing.T) {
+	vault := t.TempDir()
+	// Story A creates the file
+	writeIssue(t, vault, "PROJ-a1b.md", `---
+id: PROJ-a1b
+status: open
+type: task
+---
+PRODUCES:
+- src/auth.ts -> generateToken()
+`)
+	// Story B modifies the same file, CONSUMES from A (no blocked_by)
+	writeIssue(t, vault, "PROJ-c3d.md", `---
+id: PROJ-c3d
+status: open
+type: task
+---
+PRODUCES:
+- src/auth.ts -> refreshToken()
+
+CONSUMES:
+- PROJ-a1b: src/auth.ts -> generateToken()
+`)
+
+	result, err := CheckArtifactCollisions(vault)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Passed {
+		t.Fatalf("expected passed (CONSUMES chain), got %d collisions", len(result.Collisions))
+	}
+}
+
+func TestCheckArtifactCollisions_ThreeStoryChainNoCollision(t *testing.T) {
+	vault := t.TempDir()
+	writeIssue(t, vault, "PROJ-a.md", `---
+id: PROJ-a
+status: open
+type: task
+---
+PRODUCES:
+- src/auth.ts -> AuthService (initial)
+`)
+	writeIssue(t, vault, "PROJ-b.md", `---
+id: PROJ-b
+status: open
+type: task
+blocked_by: [PROJ-a]
+---
+PRODUCES:
+- src/auth.ts -> AuthService.login()
+
+CONSUMES:
+- PROJ-a: src/auth.ts -> AuthService
+`)
+	writeIssue(t, vault, "PROJ-c.md", `---
+id: PROJ-c
+status: open
+type: task
+blocked_by: [PROJ-b]
+---
+PRODUCES:
+- src/auth.ts -> AuthService.logout()
+
+CONSUMES:
+- PROJ-b: src/auth.ts -> AuthService.login()
+`)
+
+	result, err := CheckArtifactCollisions(vault)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Passed {
+		t.Fatalf("expected passed (3-story chain), got %d collisions", len(result.Collisions))
+	}
+}
+
+func TestCheckArtifactCollisions_PartialChainDetectsCollision(t *testing.T) {
+	vault := t.TempDir()
+	// A -> B is chained, but C is independent -- C collides with A and B
+	writeIssue(t, vault, "PROJ-a.md", `---
+id: PROJ-a
+status: open
+type: task
+---
+PRODUCES:
+- src/auth.ts -> AuthService (initial)
+`)
+	writeIssue(t, vault, "PROJ-b.md", `---
+id: PROJ-b
+status: open
+type: task
+blocked_by: [PROJ-a]
+---
+PRODUCES:
+- src/auth.ts -> AuthService.login()
+
+CONSUMES:
+- PROJ-a: src/auth.ts -> AuthService
+`)
+	writeIssue(t, vault, "PROJ-c.md", `---
+id: PROJ-c
+status: open
+type: task
+---
+PRODUCES:
+- src/auth.ts -> AuthService.unrelated()
+`)
+
+	result, err := CheckArtifactCollisions(vault)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Passed {
+		t.Fatal("expected collision (PROJ-c is unchained)")
+	}
+	if len(result.Collisions) != 1 {
+		t.Fatalf("expected 1 collision, got %d", len(result.Collisions))
+	}
+}
+
 func TestCheckArtifactCollisions_SkipsClosedIssues(t *testing.T) {
 	vault := t.TempDir()
 	writeIssue(t, vault, "PROJ-a1b.md", `---
@@ -215,6 +370,7 @@ func TestParseIssueFile(t *testing.T) {
 id: TEST-abc
 status: in_progress
 type: task
+blocked_by: [TEST-upstream, TEST-other]
 ---
 # Implement auth
 
@@ -225,28 +381,87 @@ PRODUCES:
 - src/auth.ts -> verifyToken()
 
 CONSUMES:
-- TEST-000: src/config.ts -> getSecret()
+- TEST-upstream: src/config.ts -> getSecret()
+- (existing): src/utils.ts -> hash()
 `
 	path := filepath.Join(issuesDir, "TEST-abc.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	id, status, produces, err := parseIssueFile(path)
+	data, err := parseIssueFile(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id != "TEST-abc" {
-		t.Errorf("expected id=TEST-abc, got %s", id)
+	if data.ID != "TEST-abc" {
+		t.Errorf("expected id=TEST-abc, got %s", data.ID)
 	}
-	if status != "in_progress" {
-		t.Errorf("expected status=in_progress, got %s", status)
+	if data.Status != "in_progress" {
+		t.Errorf("expected status=in_progress, got %s", data.Status)
 	}
-	if len(produces) != 2 {
-		t.Fatalf("expected 2 produces entries, got %d: %v", len(produces), produces)
+	if len(data.Produces) != 2 {
+		t.Fatalf("expected 2 produces entries, got %d: %v", len(data.Produces), data.Produces)
 	}
-	if produces[0] != "src/auth.ts -> generateToken()" {
-		t.Errorf("unexpected first produces: %s", produces[0])
+	if data.Produces[0] != "src/auth.ts -> generateToken()" {
+		t.Errorf("unexpected first produces: %s", data.Produces[0])
+	}
+	if len(data.BlockedBy) != 2 {
+		t.Fatalf("expected 2 blocked_by entries, got %d: %v", len(data.BlockedBy), data.BlockedBy)
+	}
+	if data.BlockedBy[0] != "TEST-upstream" || data.BlockedBy[1] != "TEST-other" {
+		t.Errorf("unexpected blocked_by: %v", data.BlockedBy)
+	}
+	if len(data.ConsumeRefs) != 1 {
+		t.Fatalf("expected 1 consume ref (skipping '(existing)'), got %d: %v", len(data.ConsumeRefs), data.ConsumeRefs)
+	}
+	if data.ConsumeRefs[0] != "TEST-upstream" {
+		t.Errorf("unexpected consume ref: %s", data.ConsumeRefs[0])
+	}
+}
+
+func TestParseYAMLList(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"[A, B, C]", []string{"A", "B", "C"}},
+		{"[A]", []string{"A"}},
+		{"[]", nil},
+		{"not-a-list", nil},
+		{"[PROJ-a1b, PROJ-c3d]", []string{"PROJ-a1b", "PROJ-c3d"}},
+	}
+
+	for _, tt := range tests {
+		got := parseYAMLList(tt.input)
+		if len(got) != len(tt.want) {
+			t.Errorf("parseYAMLList(%q) = %v, want %v", tt.input, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("parseYAMLList(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestExtractConsumeRef(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"PROJ-a1b: src/auth.ts -> generateToken()", "PROJ-a1b"},
+		{"(existing): src/utils.ts -> hash()", ""},
+		{"(none -- leaf story)", ""},
+		{"just-text-no-colon", ""},
+		{"PRA-2n7k: conversation_live.ex (assigns-based)", "PRA-2n7k"},
+	}
+
+	for _, tt := range tests {
+		got := extractConsumeRef(tt.input)
+		if got != tt.want {
+			t.Errorf("extractConsumeRef(%q) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 
