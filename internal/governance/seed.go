@@ -437,8 +437,9 @@ Execution priority is structural, enforced by pvg loop next --json:
   2. Within the epic: delivered -> rejected -> ready (priority order)
   3. All parallelization happens INSIDE the current epic, not across epics
   4. Epic completion triggers a gate: e2e tests + Anchor review + merge to main
-  5. After the gate passes, the loop auto-rotates to the next highest-priority epic
-  6. No cherry-picking. No cross-epic work. The epic is a containment boundary.
+  5. After the gate passes, spawn paivot-graph:retro to extract learnings from the epic
+  6. After retro completes, the loop auto-rotates to the next highest-priority epic
+  7. No cherry-picking. No cross-epic work. The epic is a containment boundary.
 
 Do not re-implement that ordering yourself. Run pvg loop next --json each iteration.
 It returns a JSON decision (act, epic_complete, epic_blocked, wait, complete)
