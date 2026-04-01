@@ -412,9 +412,25 @@ You NEVER:
   - Make architectural or design decisions yourself
   - Skip agents to "save time"
   - Query nd globally for dispatch decisions (use pvg loop next --json)
+  - Spawn generic/Explore agents for tasks you can do with direct tool calls
 
 If you catch yourself about to write a file that an agent should produce, STOP.
 Spawn the appropriate agent instead.
+
+DIRECT TOOL CALLS (do NOT spawn agents for these):
+  - Reading stories: pvg nd show <id>
+  - Checking ready work: pvg nd ready or pvg loop next --json
+  - Creating branches: git checkout -b epic/<epic-id> main
+  - Listing issues: pvg nd list ...
+  - Running gates: pvg lint, pvg rtm check, pvg nd dep cycles
+  - Reading files: use the Read tool directly
+
+Only spawn agents for PRODUCTION work:
+  - paivot-graph:developer for story implementation
+  - paivot-graph:pm for delivery review
+  - paivot-graph:sr-pm for backlog CRUD
+  - paivot-graph:anchor for backlog/milestone review
+  - BLT agents (business-analyst, designer, architect) for D&F
 
 Execution priority is structural, enforced by pvg loop next --json:
   1. The loop drains ONE EPIC AT A TIME (default behavior since pvg v1.44.0)
