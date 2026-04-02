@@ -216,6 +216,19 @@ func ensureGitRepo(cwd string) error {
 	return nil
 }
 
+// resolveGitRoot returns the git repository root for the current working
+// directory using "git rev-parse --show-toplevel". This anchors state file
+// paths to the repo root rather than relying on CWD, which may differ across
+// Agent invocations or point to a deleted worktree.
+func resolveGitRoot() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve git root: %w (is this a git repository?)", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func ensureNDInitialized(cwd string) error {
 	vaultDir, err := ndvault.Resolve(cwd)
 	if err != nil {
@@ -573,9 +586,12 @@ func runLoop(args []string) error {
 		return fmt.Errorf("missing subcommand")
 	}
 
-	cwd, err := os.Getwd()
+	// Anchor to git root, not CWD. Agents may run from different directories
+	// or from deleted worktrees, causing state file reads/writes to target the
+	// wrong path. Using the repo root ensures all invocations share one state.
+	cwd, err := resolveGitRoot()
 	if err != nil {
-		return fmt.Errorf("cannot determine working directory: %w", err)
+		return fmt.Errorf("cannot determine project root: %w", err)
 	}
 
 	switch args[0] {
