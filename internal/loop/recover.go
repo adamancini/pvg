@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/paivot-ai/pvg/internal/worktree"
 )
 
 // ActionKind describes a single recovery action type.
@@ -208,10 +210,9 @@ func ExecuteRecover(projectRoot string, plan RecoverPlan) []string {
 	for _, action := range plan.Actions {
 		switch action.Kind {
 		case ActionRemoveWorktree:
-			cmd := exec.Command("git", "worktree", "remove", "--force", action.WorktreePath)
-			cmd.Dir = projectRoot
-			if out, err := cmd.CombinedOutput(); err != nil {
-				errors = append(errors, fmt.Sprintf("remove worktree %s: %s (%v)", action.WorktreePath, strings.TrimSpace(string(out)), err))
+			result := worktree.SafeRemove(action.WorktreePath)
+			if result.Error != "" {
+				errors = append(errors, fmt.Sprintf("remove worktree %s: %s", action.WorktreePath, result.Error))
 			}
 
 		case ActionDeleteBranch:
