@@ -81,6 +81,9 @@ func Check(vaultDir, projectRoot string, input HookInput) Result {
 		}
 		return CheckDispatcher(projectRoot, input)
 	case "Bash":
+		if r := CheckWorktreeCd(input.ToolInput.Command); !r.Allowed {
+			return r
+		}
 		if r := checkBashCommand(vaultDir, input.ToolInput.Command); !r.Allowed {
 			return r
 		}
