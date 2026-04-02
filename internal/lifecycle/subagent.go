@@ -79,16 +79,21 @@ func SubagentStop() error {
 	_ = dispatcher.UntrackAgent(cwd, input.AgentID)
 
 	if worktreeAgentTypes[input.AgentType] {
-		emitCWDResetWarning(cwd)
+		emitCWDResetWarning(cwd, input.AgentType)
 	}
 	return nil
 }
 
-// emitCWDResetWarning checks if any worktrees exist and outputs a structural
-// CWD reset instruction. The output is visible to the model via the hook
-// result. This fires automatically after every developer/PM agent, making it
-// impossible to forget.
-func emitCWDResetWarning(cwd string) {
+// emitCWDResetWarning checks if dispatcher mode is active, any worktrees
+// exist, and outputs a structural CWD reset instruction. Only fires under
+// Paivot -- normal Claude Code sessions are not affected.
+func emitCWDResetWarning(cwd, agentType string) {
+	// Only emit when Paivot dispatcher is active.
+	state, _, err := dispatcher.ReadStateRoot(cwd)
+	if err != nil || !state.Enabled {
+		return
+	}
+
 	root := resolveGitRootQuiet()
 	if root == "" {
 		root = cwd
@@ -100,7 +105,7 @@ func emitCWDResetWarning(cwd string) {
 		return // no worktrees -- no risk
 	}
 
-	fmt.Printf("[CWD-SAFETY] Agent completed. Worktrees exist at .claude/worktrees/.\n")
+	fmt.Printf("[CWD-SAFETY] %s agent completed. Worktrees exist at .claude/worktrees/.\n", agentType)
 	fmt.Printf("Your shell CWD may have drifted. BEFORE any worktree operation, run:\n")
 	fmt.Printf("  cd %s\n", root)
 	fmt.Printf("Then verify with: pwd\n")

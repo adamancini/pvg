@@ -1,8 +1,30 @@
 package guard
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/paivot-ai/pvg/internal/dispatcher"
+)
+
+// setupDispatcherForWorktree creates a temp dir with dispatcher mode enabled.
+func setupDispatcherForWorktree(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	knowledgeDir := filepath.Join(root, ".vault", "knowledge")
+	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := dispatcher.On(root); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
 
 func TestCheckWorktreeCd_BlocksDirectCd(t *testing.T) {
+	root := setupDispatcherForWorktree(t)
+
 	cases := []struct {
 		name    string
 		command string
@@ -17,7 +39,7 @@ func TestCheckWorktreeCd_BlocksDirectCd(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := CheckWorktreeCd(tc.command)
+			r := CheckWorktreeCd(root, tc.command)
 			if r.Allowed {
 				t.Errorf("expected BLOCKED for %q", tc.command)
 			}
@@ -26,6 +48,8 @@ func TestCheckWorktreeCd_BlocksDirectCd(t *testing.T) {
 }
 
 func TestCheckWorktreeCd_AllowsLegitimateCommands(t *testing.T) {
+	root := setupDispatcherForWorktree(t)
+
 	cases := []struct {
 		name    string
 		command string
@@ -43,10 +67,27 @@ func TestCheckWorktreeCd_AllowsLegitimateCommands(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := CheckWorktreeCd(tc.command)
+			r := CheckWorktreeCd(root, tc.command)
 			if !r.Allowed {
 				t.Errorf("expected ALLOWED for %q, got blocked: %s", tc.command, r.Reason)
 			}
 		})
+	}
+}
+
+func TestCheckWorktreeCd_AllowsWhenDispatcherOff(t *testing.T) {
+	// No dispatcher state -- simulates normal Claude Code session.
+	root := t.TempDir()
+
+	r := CheckWorktreeCd(root, "cd .claude/worktrees/dev-PRA-36tu")
+	if !r.Allowed {
+		t.Errorf("expected ALLOWED when dispatcher is off, got blocked: %s", r.Reason)
+	}
+}
+
+func TestCheckWorktreeCd_AllowsWithEmptyProjectRoot(t *testing.T) {
+	r := CheckWorktreeCd("", "cd .claude/worktrees/dev-PRA-36tu")
+	if !r.Allowed {
+		t.Error("expected ALLOWED with empty project root")
 	}
 }

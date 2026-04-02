@@ -3,6 +3,8 @@ package guard
 import (
 	"regexp"
 	"strings"
+
+	"github.com/paivot-ai/pvg/internal/dispatcher"
 )
 
 // worktreeCdRe matches cd commands that navigate into .claude/worktrees/.
@@ -22,10 +24,16 @@ const worktreeCdBlockMsg = "BLOCKED: Dispatcher must never cd into a worktree di
 	"  - Use `git -C <worktree-path>` to run git commands from outside"
 
 // CheckWorktreeCd blocks Bash commands that would cd into .claude/worktrees/.
-// The dispatcher has no legitimate reason to change its CWD into a worktree --
-// agents work inside worktrees, the dispatcher manages them from the project root.
-func CheckWorktreeCd(command string) Result {
-	if command == "" {
+// Only active when dispatcher mode is enabled (Paivot is running). In normal
+// Claude Code sessions, worktrees are legitimate (e.g., Agent isolation).
+func CheckWorktreeCd(projectRoot, command string) Result {
+	if command == "" || projectRoot == "" {
+		return Result{Allowed: true}
+	}
+
+	// Only enforce when Paivot dispatcher mode is active.
+	state, _, err := dispatcher.ReadStateRoot(projectRoot)
+	if err != nil || !state.Enabled {
 		return Result{Allowed: true}
 	}
 
