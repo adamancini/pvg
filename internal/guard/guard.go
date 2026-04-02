@@ -249,7 +249,9 @@ const projectVaultBlockMsg = "BLOCKED: Direct modification of project vault. " +
 
 const projectIssuesBlockMsg = "BLOCKED: Direct modification of issue tracker. " +
 	"Use nd commands instead (nd create, nd update, nd close). " +
-	"nd provides locking and FSM validation for concurrent agent safety."
+	"nd provides locking and FSM validation for concurrent agent safety. " +
+	"For body edits use: nd update <id> -d '<new description>' or nd update <id> --body-file -. " +
+	"Load the nd skill first (/nd) if you are unfamiliar with nd commands."
 
 // projectVaultPath is the relative path segment that identifies project vault files.
 const projectVaultPath = "/.vault/knowledge/"
