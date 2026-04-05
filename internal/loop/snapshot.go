@@ -184,6 +184,17 @@ func ListMergedBranches(projectRoot string) ([]string, error) {
 	return branches, nil
 }
 
+// EpicBranchExists checks whether a local branch named epic/<epicID> exists.
+// Returns false on any error (fail open).
+func EpicBranchExists(projectRoot, epicID string) bool {
+	if epicID == "" {
+		return false
+	}
+	cmd := exec.Command("git", "rev-parse", "--verify", "epic/"+epicID)
+	cmd.Dir = projectRoot
+	return cmd.Run() == nil
+}
+
 // BuildSnapshot queries nd for in-progress issues, lists worktrees, and
 // assembles a snapshot. agentAssignments maps story IDs to agent types
 // (e.g. "PROJ-a1b" -> "developer"). It is optional.

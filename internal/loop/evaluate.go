@@ -3,20 +3,21 @@ package loop
 // StopConfig holds all inputs needed for the stop decision.
 // This is a value struct -- no I/O, no side effects.
 type StopConfig struct {
-	Active         bool
-	Mode           string
-	TargetEpic     string
-	PersistState   bool
-	Iteration      int
-	MaxIterations  int // 0 = unlimited
-	ConsecWaits    int
-	MaxConsecWaits int
-	WaitIterations int
-	Ready          int
-	Delivered      int
-	InProgress     int
-	Blocked        int
-	Other          int
+	Active           bool
+	Mode             string
+	TargetEpic       string
+	PersistState     bool
+	Iteration        int
+	MaxIterations    int // 0 = unlimited
+	ConsecWaits      int
+	MaxConsecWaits   int
+	WaitIterations   int
+	Ready            int
+	Delivered        int
+	InProgress       int
+	Blocked          int
+	Other            int
+	EpicPendingMerge bool // true when the target epic branch exists but hasn't been merged to main
 }
 
 // StopDecision is the output of EvaluateStop.
@@ -54,6 +55,19 @@ func EvaluateStop(cfg StopConfig) StopDecision {
 
 	actionable := cfg.Ready + cfg.Delivered
 	total := cfg.Ready + cfg.Delivered + cfg.InProgress + cfg.Blocked + cfg.Other
+
+	// All nd items complete but epic branch still exists -- completion gate pending.
+	// The dispatcher must run e2e tests, Anchor review, merge to main, and retro
+	// before the loop can exit.
+	if total == 0 && cfg.EpicPendingMerge {
+		return StopDecision{
+			Allow:          false,
+			Reason:         "Epic completion gate pending -- merge epic to main before exit",
+			NewIteration:   nextIter,
+			NewConsecWaits: 0, // reset: this is real work, not a wait
+			NewWaitIters:   cfg.WaitIterations,
+		}
+	}
 
 	// All dev work complete (total==0)
 	if total == 0 {

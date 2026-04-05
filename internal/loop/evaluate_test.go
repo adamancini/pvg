@@ -350,6 +350,63 @@ func TestEvaluateStop_ActionableThreshold_RemovesStateWithoutPersistence(t *test
 	}
 }
 
+func TestEvaluateStop_EpicPendingMerge_BlocksExit(t *testing.T) {
+	d := EvaluateStop(StopConfig{
+		Active:           true,
+		Iteration:        10,
+		MaxIterations:    50,
+		MaxConsecWaits:   3,
+		EpicPendingMerge: true,
+		// All nd counts are zero -- stories are all closed
+	})
+	if d.Allow {
+		t.Error("expected block when epic branch is pending merge")
+	}
+	if d.Reason != "Epic completion gate pending -- merge epic to main before exit" {
+		t.Errorf("unexpected reason: %s", d.Reason)
+	}
+	if d.NewConsecWaits != 0 {
+		t.Errorf("expected consec waits reset to 0, got %d", d.NewConsecWaits)
+	}
+}
+
+func TestEvaluateStop_EpicPendingMerge_False_AllowsExit(t *testing.T) {
+	d := EvaluateStop(StopConfig{
+		Active:           true,
+		Iteration:        10,
+		MaxIterations:    50,
+		EpicPendingMerge: false,
+		// All nd counts are zero
+	})
+	if !d.Allow {
+		t.Error("expected allow when epic branch is NOT pending merge and all work complete")
+	}
+	if !d.RemoveState {
+		t.Error("expected remove state when all complete")
+	}
+	if d.Reason != "All work complete" {
+		t.Errorf("unexpected reason: %s", d.Reason)
+	}
+}
+
+func TestEvaluateStop_EpicPendingMerge_WithActiveWork_NoEffect(t *testing.T) {
+	// EpicPendingMerge should not affect behavior when there's still active work
+	d := EvaluateStop(StopConfig{
+		Active:           true,
+		Iteration:        5,
+		MaxIterations:    50,
+		MaxConsecWaits:   3,
+		EpicPendingMerge: true,
+		Ready:            2,
+	})
+	if d.Allow {
+		t.Error("expected block with ready work (regardless of EpicPendingMerge)")
+	}
+	if d.Reason != "Actionable work remains" {
+		t.Errorf("unexpected reason: %s", d.Reason)
+	}
+}
+
 func TestEvaluateStop_IterationIncrement(t *testing.T) {
 	d := EvaluateStop(StopConfig{
 		Active:        true,

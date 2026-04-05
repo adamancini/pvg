@@ -102,21 +102,27 @@ func checkLoop(cwd string) error {
 		return nil
 	}
 
+	// Check if the target epic branch still exists locally (unmerged).
+	// If all nd items are closed but the branch is still around, the
+	// completion gate (e2e + Anchor + merge to main + retro) hasn't run.
+	epicPending := loop.EpicBranchExists(root, state.TargetEpic)
+
 	cfg := loop.StopConfig{
-		Active:         state.Active,
-		Mode:           state.Mode,
-		TargetEpic:     state.TargetEpic,
-		PersistState:   isLoopPersistEnabled(root),
-		Iteration:      state.Iteration,
-		MaxIterations:  state.MaxIterations,
-		ConsecWaits:    state.ConsecutiveWaits,
-		MaxConsecWaits: state.MaxConsecutiveWaits,
-		WaitIterations: state.WaitIterations,
-		Ready:          wc.Ready,
-		Delivered:      wc.Delivered,
-		InProgress:     wc.InProgress,
-		Blocked:        wc.Blocked,
-		Other:          wc.Other,
+		Active:           state.Active,
+		Mode:             state.Mode,
+		TargetEpic:       state.TargetEpic,
+		PersistState:     isLoopPersistEnabled(root),
+		Iteration:        state.Iteration,
+		MaxIterations:    state.MaxIterations,
+		ConsecWaits:      state.ConsecutiveWaits,
+		MaxConsecWaits:   state.MaxConsecutiveWaits,
+		WaitIterations:   state.WaitIterations,
+		Ready:            wc.Ready,
+		Delivered:        wc.Delivered,
+		InProgress:       wc.InProgress,
+		Blocked:          wc.Blocked,
+		Other:            wc.Other,
+		EpicPendingMerge: epicPending,
 	}
 
 	decision := loop.EvaluateStop(cfg)
@@ -197,6 +203,22 @@ func BuildContinuationPrompt(state *loop.State, decision *loop.StopDecision, max
 	epicCtx := ""
 	if state.TargetEpic != "" {
 		epicCtx = fmt.Sprintf("Current epic: %s (auto-rotate=%v).\n", state.TargetEpic, state.AutoRotate)
+	}
+
+	// Epic completion gate pending: all stories closed but epic branch not merged.
+	// Direct the dispatcher to run the full completion gate.
+	total := wc.Ready + wc.Delivered + wc.InProgress + wc.Blocked + wc.Other
+	if total == 0 && state.TargetEpic != "" {
+		prompt := header + epicCtx
+		prompt += "\nAll stories in this epic are closed. Run the EPIC COMPLETION GATE now:\n"
+		prompt += "1. Run `pvg loop next --json` -- it will return `epic_complete`\n"
+		prompt += "2. Step 1: Run the full test suite on epic/" + state.TargetEpic + " (e2e verification gate)\n"
+		prompt += "3. Step 2: Spawn Anchor milestone review\n"
+		prompt += "4. Step 3: Merge epic/" + state.TargetEpic + " to main (solo_dev) or create PR (team)\n"
+		prompt += "5. Step 4: Spawn retro agent\n"
+		prompt += "6. After retro: rotate to next epic or allow exit if this was the last epic\n"
+		prompt += "\nDo NOT exit without completing the gate. The epic branch must be merged and cleaned up.\n"
+		return prompt
 	}
 
 	// Wait-like: nothing ready to spawn, agents are running
