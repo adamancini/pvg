@@ -17,6 +17,7 @@ import (
 type Counters struct {
 	Created int
 	Updated int
+	Merged  int
 	Skipped int
 }
 
@@ -61,6 +62,7 @@ func Seed(force bool, pluginDir string) error {
 	}
 
 	counters := &Counters{}
+	baseDir := BaselineDir(vaultDir)
 
 	fmt.Println("paivot-graph vault seeder")
 	fmt.Println("=========================")
@@ -91,24 +93,24 @@ func Seed(force bool, pluginDir string) error {
 	}
 
 	for _, agent := range agents {
-		seedAgent(vaultDir, agentSrc, agent.slug, agent.vaultName, today, force, counters)
+		seedAgent(vaultDir, baseDir, agentSrc, agent.slug, agent.vaultName, today, force, counters)
 	}
 
 	// 2. Seed skill content
 	fmt.Println()
 	fmt.Println("Seeding skill content...")
-	seedSkill(vaultDir, pluginDir, today, force, counters)
+	seedSkill(vaultDir, baseDir, pluginDir, today, force, counters)
 
 	// 3. Seed behavioral notes
 	fmt.Println()
 	fmt.Println("Seeding behavioral notes...")
-	seedSessionOperatingMode(vaultDir, today, force, counters)
-	seedPreCompactChecklist(vaultDir, today, force, counters)
-	seedStopCaptureChecklist(vaultDir, today, force, counters)
+	seedSessionOperatingMode(vaultDir, baseDir, today, force, counters)
+	seedPreCompactChecklist(vaultDir, baseDir, today, force, counters)
+	seedStopCaptureChecklist(vaultDir, baseDir, today, force, counters)
 
 	fmt.Println()
-	fmt.Printf("Done. Created: %d, Updated: %d, Skipped: %d\n",
-		counters.Created, counters.Updated, counters.Skipped)
+	fmt.Printf("Done. Created: %d, Updated: %d, Merged: %d, Skipped: %d\n",
+		counters.Created, counters.Updated, counters.Merged, counters.Skipped)
 
 	return nil
 }
@@ -175,17 +177,45 @@ func modTime(path string) time.Time {
 	return info.ModTime()
 }
 
-func writeNote(vaultDir, relPath, content string, force bool, counters *Counters) {
+func writeNote(vaultDir, baseDir, relPath, content string, force bool, counters *Counters) {
 	fullPath := filepath.Join(vaultDir, relPath)
 
 	if _, err := os.Stat(fullPath); err == nil {
 		if force {
-			if werr := os.WriteFile(fullPath, []byte(content), 0644); werr != nil {
-				fmt.Printf("  ERROR: %s: %v\n", relPath, werr)
-				return
+			// Check baseline to detect user modifications
+			base, berr := ReadBaseline(baseDir, relPath)
+			current, _ := os.ReadFile(fullPath)
+
+			if berr == nil && string(current) == base {
+				// Unmodified: fast path — overwrite safely
+				if werr := os.WriteFile(fullPath, []byte(content), 0644); werr != nil {
+					fmt.Printf("  ERROR: %s: %v\n", relPath, werr)
+					return
+				}
+				fmt.Printf("  UPDATED: %s\n", relPath)
+				counters.Updated++
+			} else if berr == nil && string(current) != base {
+				// User-modified: overwrite anyway (merge comes in story 2)
+				if werr := os.WriteFile(fullPath, []byte(content), 0644); werr != nil {
+					fmt.Printf("  ERROR: %s: %v\n", relPath, werr)
+					return
+				}
+				fmt.Printf("  UPDATED: %s (user changes overwritten — merge not yet implemented)\n", relPath)
+				counters.Updated++
+			} else {
+				// No baseline: overwrite as before
+				if werr := os.WriteFile(fullPath, []byte(content), 0644); werr != nil {
+					fmt.Printf("  ERROR: %s: %v\n", relPath, werr)
+					return
+				}
+				fmt.Printf("  UPDATED: %s\n", relPath)
+				counters.Updated++
 			}
-			fmt.Printf("  UPDATED: %s\n", relPath)
-			counters.Updated++
+
+			// Store baseline after successful write
+			if wberr := WriteBaseline(baseDir, relPath, content); wberr != nil {
+				fmt.Printf("  WARN: failed to write baseline for %s: %v\n", relPath, wberr)
+			}
 		} else {
 			fmt.Printf("  SKIP: %s (already exists)\n", relPath)
 			counters.Skipped++
@@ -205,6 +235,11 @@ func writeNote(vaultDir, relPath, content string, force bool, counters *Counters
 	}
 	fmt.Printf("  CREATED: %s\n", relPath)
 	counters.Created++
+
+	// Store baseline after successful create
+	if wberr := WriteBaseline(baseDir, relPath, content); wberr != nil {
+		fmt.Printf("  WARN: failed to write baseline for %s: %v\n", relPath, wberr)
+	}
 }
 
 // findAgentSource resolves the best source file for a given agent.
@@ -269,7 +304,7 @@ func extractBody(filePath string) (string, error) {
 	return strings.Join(lines[bodyStart:], "\n"), nil
 }
 
-func seedAgent(vaultDir, agentSrc, slug, vaultName, today string, force bool, counters *Counters) {
+func seedAgent(vaultDir, baseDir, agentSrc, slug, vaultName, today string, force bool, counters *Counters) {
 	// Check for a richer seed source first. Files in seed/ contain the full
 	// authoritative prompt (e.g. "seed/Sr PM Playbook.md" for Sr PM Agent).
 	// Files in agents/ are thin vault-loaders with fallback content.
@@ -304,10 +339,10 @@ created: %s
 - %s: Seeded from paivot-graph plugin (initial version)
 `, today, strings.TrimSpace(body), today)
 
-	writeNote(vaultDir, filepath.Join("methodology", vaultName+".md"), content, force, counters)
+	writeNote(vaultDir, baseDir, filepath.Join("methodology", vaultName+".md"), content, force, counters)
 }
 
-func seedSkill(vaultDir, pluginDir, today string, force bool, counters *Counters) {
+func seedSkill(vaultDir, baseDir, pluginDir, today string, force bool, counters *Counters) {
 	skillSrc := filepath.Join(pluginDir, "skills", "vault-knowledge", "SKILL.md")
 	if _, err := os.Stat(skillSrc); err != nil {
 		fmt.Printf("  WARN: %s not found\n", skillSrc)
@@ -339,10 +374,10 @@ created: %s
 - %s: Seeded from paivot-graph plugin (initial version)
 `, today, strings.TrimSpace(body), today)
 
-	writeNote(vaultDir, filepath.Join("conventions", "Vault Knowledge Skill.md"), content, force, counters)
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Vault Knowledge Skill.md"), content, force, counters)
 }
 
-func seedSessionOperatingMode(vaultDir, today string, force bool, counters *Counters) {
+func seedSessionOperatingMode(vaultDir, baseDir, today string, force bool, counters *Counters) {
 	content := fmt.Sprintf(`---
 type: convention
 scope: system
@@ -559,10 +594,10 @@ When D&F is not needed (skip entirely):
 - %s: Seeded from paivot-graph plugin (initial version)
 `, today, today)
 
-	writeNote(vaultDir, filepath.Join("conventions", "Session Operating Mode.md"), content, force, counters)
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Session Operating Mode.md"), content, force, counters)
 }
 
-func seedPreCompactChecklist(vaultDir, today string, force bool, counters *Counters) {
+func seedPreCompactChecklist(vaultDir, baseDir, today string, force bool, counters *Counters) {
 	content := fmt.Sprintf(`---
 type: convention
 scope: system
@@ -612,10 +647,10 @@ Do this NOW -- after compaction, the details will be lost.
 - %s: Seeded from paivot-graph plugin (initial version)
 `, today, today)
 
-	writeNote(vaultDir, filepath.Join("conventions", "Pre-Compact Checklist.md"), content, force, counters)
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Pre-Compact Checklist.md"), content, force, counters)
 }
 
-func seedStopCaptureChecklist(vaultDir, today string, force bool, counters *Counters) {
+func seedStopCaptureChecklist(vaultDir, baseDir, today string, force bool, counters *Counters) {
 	content := fmt.Sprintf(`---
 type: convention
 scope: system
@@ -644,5 +679,5 @@ Use vlt to create notes: vlt vault="Claude" create name="<Title>" path="_inbox/<
 - %s: Seeded from paivot-graph plugin (initial version)
 `, today, today)
 
-	writeNote(vaultDir, filepath.Join("conventions", "Stop Capture Checklist.md"), content, force, counters)
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Stop Capture Checklist.md"), content, force, counters)
 }
