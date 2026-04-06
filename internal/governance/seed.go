@@ -15,10 +15,12 @@ import (
 
 // Counters tracks seed operations.
 type Counters struct {
-	Created int
-	Updated int
-	Merged  int
-	Skipped int
+	Created        int
+	Updated        int
+	Merged         int
+	Conflicted     int
+	ConflictedFiles []string
+	Skipped        int
 }
 
 // Seed writes vault notes to disk under an exclusive vlt lock. This prevents
@@ -67,7 +69,7 @@ func Seed(force bool, pluginDir string) error {
 	fmt.Println("paivot-graph vault seeder")
 	fmt.Println("=========================")
 	if force {
-		fmt.Println("Mode: force (overwriting existing notes)")
+		fmt.Println("Mode: force (merging with existing notes)")
 	} else {
 		fmt.Println("Mode: safe (skipping existing notes)")
 	}
@@ -109,8 +111,16 @@ func Seed(force bool, pluginDir string) error {
 	seedStopCaptureChecklist(vaultDir, baseDir, today, force, counters)
 
 	fmt.Println()
-	fmt.Printf("Done. Created: %d, Updated: %d, Merged: %d, Skipped: %d\n",
-		counters.Created, counters.Updated, counters.Merged, counters.Skipped)
+	fmt.Printf("Done. Created: %d, Updated: %d, Merged: %d, Conflicted: %d, Skipped: %d\n",
+		counters.Created, counters.Updated, counters.Merged, counters.Conflicted, counters.Skipped)
+
+	if counters.Conflicted > 0 {
+		fmt.Println()
+		fmt.Println("CONFLICTS (manual resolution needed):")
+		for _, f := range counters.ConflictedFiles {
+			fmt.Printf("  %s\n", f)
+		}
+	}
 
 	return nil
 }
@@ -195,13 +205,37 @@ func writeNote(vaultDir, baseDir, relPath, content string, force bool, counters 
 				fmt.Printf("  UPDATED: %s\n", relPath)
 				counters.Updated++
 			} else if berr == nil && string(current) != base {
-				// User-modified: overwrite anyway (merge comes in story 2)
-				if werr := os.WriteFile(fullPath, []byte(content), 0644); werr != nil {
+				// User-modified: three-way merge
+				merged, hasConflict, merr := Merge3(base, content, string(current))
+				if merr != nil {
+					fmt.Printf("  WARN: merge failed for %s (%v), overwriting\n", relPath, merr)
+					if werr := os.WriteFile(fullPath, []byte(content), 0644); werr != nil {
+						fmt.Printf("  ERROR: %s: %v\n", relPath, werr)
+						return
+					}
+					if wberr := WriteBaseline(baseDir, relPath, content); wberr != nil {
+						fmt.Printf("  WARN: failed to write baseline for %s: %v\n", relPath, wberr)
+					}
+					counters.Updated++
+					return
+				}
+				if werr := os.WriteFile(fullPath, []byte(merged), 0644); werr != nil {
 					fmt.Printf("  ERROR: %s: %v\n", relPath, werr)
 					return
 				}
-				fmt.Printf("  UPDATED: %s (user changes overwritten — merge not yet implemented)\n", relPath)
-				counters.Updated++
+				if hasConflict {
+					fmt.Printf("  CONFLICT: %s (conflict markers inserted, manual resolution needed)\n", relPath)
+					counters.Conflicted++
+					counters.ConflictedFiles = append(counters.ConflictedFiles, relPath)
+					// Do NOT update baseline when conflicts exist
+				} else {
+					fmt.Printf("  MERGED: %s\n", relPath)
+					if wberr := WriteBaseline(baseDir, relPath, content); wberr != nil {
+						fmt.Printf("  WARN: failed to write baseline for %s: %v\n", relPath, wberr)
+					}
+					counters.Merged++
+				}
+				return
 			} else {
 				// No baseline: overwrite as before
 				if werr := os.WriteFile(fullPath, []byte(content), 0644); werr != nil {

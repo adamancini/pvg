@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -146,5 +147,99 @@ func TestWriteNoteFirstTimeSeedNoBaseline(t *testing.T) {
 	}
 	if baseline != newContent {
 		t.Fatalf("baseline = %q, want %q", baseline, newContent)
+	}
+}
+
+func TestWriteNoteMergesModifiedFile(t *testing.T) {
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	relPath := filepath.Join("methodology", "Test Agent.md")
+
+	// Original content that both baseline and vault start with.
+	// Three distinct sections so edits can be non-overlapping.
+	original := "# Section A\nAlpha\n\n# Section B\nBravo\n\n# Section C\nCharlie\n"
+
+	// Step 1: Create the note (stores baseline)
+	counters := &Counters{}
+	writeNote(vaultDir, baseDir, relPath, original, false, counters)
+	if counters.Created != 1 {
+		t.Fatalf("expected Created=1, got %d", counters.Created)
+	}
+
+	// Step 2: Simulate user editing Section C in the vault file
+	userEdited := "# Section A\nAlpha\n\n# Section B\nBravo\n\n# Section C\nCharlie-user-edit\n"
+	fullPath := filepath.Join(vaultDir, relPath)
+	if err := os.WriteFile(fullPath, []byte(userEdited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 3: Force-seed with new plugin content that changes Section A
+	newPluginContent := "# Section A\nAlpha-plugin-update\n\n# Section B\nBravo\n\n# Section C\nCharlie\n"
+	counters2 := &Counters{}
+	writeNote(vaultDir, baseDir, relPath, newPluginContent, true, counters2)
+
+	if counters2.Merged != 1 {
+		t.Fatalf("expected Merged=1, got Merged=%d, Updated=%d, Conflicted=%d",
+			counters2.Merged, counters2.Updated, counters2.Conflicted)
+	}
+
+	// Verify merged result contains both changes
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		t.Fatalf("reading vault file: %v", err)
+	}
+	merged := string(data)
+	if !strings.Contains(merged, "Alpha-plugin-update") {
+		t.Errorf("merged output missing plugin change 'Alpha-plugin-update':\n%s", merged)
+	}
+	if !strings.Contains(merged, "Charlie-user-edit") {
+		t.Errorf("merged output missing user change 'Charlie-user-edit':\n%s", merged)
+	}
+}
+
+func TestWriteNoteConflictMarkers(t *testing.T) {
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	relPath := filepath.Join("methodology", "Test Agent.md")
+
+	// Original content with a section both sides will edit
+	original := "# Title\nOriginal line\n\n# Footer\nEnd\n"
+
+	// Step 1: Create the note (stores baseline)
+	counters := &Counters{}
+	writeNote(vaultDir, baseDir, relPath, original, false, counters)
+	if counters.Created != 1 {
+		t.Fatalf("expected Created=1, got %d", counters.Created)
+	}
+
+	// Step 2: Simulate user editing the SAME line
+	userEdited := "# Title\nUser-modified line\n\n# Footer\nEnd\n"
+	fullPath := filepath.Join(vaultDir, relPath)
+	if err := os.WriteFile(fullPath, []byte(userEdited), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 3: Force-seed with plugin content that also changes the SAME line
+	newPluginContent := "# Title\nPlugin-modified line\n\n# Footer\nEnd\n"
+	counters2 := &Counters{}
+	writeNote(vaultDir, baseDir, relPath, newPluginContent, true, counters2)
+
+	if counters2.Conflicted != 1 {
+		t.Fatalf("expected Conflicted=1, got Conflicted=%d, Merged=%d, Updated=%d",
+			counters2.Conflicted, counters2.Merged, counters2.Updated)
+	}
+
+	// Verify conflict markers are present in the vault file
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		t.Fatalf("reading vault file: %v", err)
+	}
+	if !strings.Contains(string(data), "<<<<<<<") {
+		t.Errorf("expected conflict markers in output:\n%s", string(data))
+	}
+
+	// Verify the conflicted file is tracked
+	if len(counters2.ConflictedFiles) != 1 || counters2.ConflictedFiles[0] != relPath {
+		t.Errorf("ConflictedFiles = %v, want [%s]", counters2.ConflictedFiles, relPath)
 	}
 }
