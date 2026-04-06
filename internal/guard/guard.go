@@ -150,23 +150,19 @@ func checkFilePath(vaultDir, filePath string) Result {
 	}
 
 	// Normalize both paths so symlinks and case tricks don't bypass the guard.
+	// We check against BOTH the EvalSymlinks-resolved vault AND the Clean vault
+	// because on macOS /var is a symlink to /private/var: an existing vault dir
+	// resolves to /private/var/... but a not-yet-existing file under it falls
+	// back to filepath.Clean which keeps /var/..., causing prefix mismatch.
 	normVault := normalizePath(vaultDir)
+	cleanVault := filepath.Clean(vaultDir)
 	normFile := normalizePath(filePath)
+	cleanFile := filepath.Clean(filePath)
 
-	for _, folder := range ProtectedFolders {
-		protected := filepath.Join(normVault, folder) + "/"
-		if strings.HasPrefix(normFile, protected) {
-			return Result{Allowed: false, Reason: systemBlockMsg(folder)}
-		}
-	}
-
-	// Also check the raw (non-resolved) path in case the file doesn't exist yet
-	// and EvalSymlinks fell back to Clean -- the vault dir itself may resolve.
-	if normFile != filePath {
-		cleanFile := filepath.Clean(filePath)
+	for _, vault := range []string{normVault, cleanVault} {
 		for _, folder := range ProtectedFolders {
-			protected := filepath.Join(normVault, folder) + "/"
-			if strings.HasPrefix(cleanFile, protected) {
+			protected := filepath.Join(vault, folder) + "/"
+			if strings.HasPrefix(normFile, protected) || strings.HasPrefix(cleanFile, protected) {
 				return Result{Allowed: false, Reason: systemBlockMsg(folder)}
 			}
 		}
@@ -187,16 +183,24 @@ func checkBashCommand(vaultDir, command string) Result {
 	}
 
 	normVault := normalizePath(vaultDir)
+	cleanVault := filepath.Clean(vaultDir)
 
 	// Check for write operations targeting protected dirs.
 	// Key improvement: verify the protected path appears in the write
 	// *destination* (after the redirect operator or as a later argument),
 	// not just anywhere in the command string.
+	// We check both EvalSymlinks-resolved and Clean vault paths to handle macOS
+	// /var -> /private/var symlink mismatch when files don't exist yet.
 	for _, folder := range ProtectedFolders {
 		protected := filepath.Join(normVault, folder)
+		protectedClean := filepath.Join(cleanVault, folder)
 
-		if !strings.Contains(command, protected) {
+		if !strings.Contains(command, protected) && !strings.Contains(command, protectedClean) {
 			continue
+		}
+		// Use whichever form the command actually contains.
+		if !strings.Contains(command, protected) {
+			protected = protectedClean
 		}
 
 		// Check redirect operators: the protected path must appear

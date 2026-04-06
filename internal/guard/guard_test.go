@@ -713,3 +713,114 @@ func TestCheckBash_AllowsReadFromIssues(t *testing.T) {
 		t.Errorf("expected read from .vault/issues/ allowed, got blocked: %s", result.Reason)
 	}
 }
+
+// --- Non-default vault name and subdirectory vault path tests (PAI-9xcp) ---
+
+func TestCheckFilePath_NonDefaultVaultName_BlocksProtectedDir(t *testing.T) {
+	// Vault with a non-default name ("MyNotes" instead of "Claude").
+	// Edit to methodology/ inside this vault must be blocked.
+	vaultDir := filepath.Join(t.TempDir(), "MyNotes")
+	if err := os.MkdirAll(filepath.Join(vaultDir, "methodology"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Edit",
+		ToolInput: ToolInput{FilePath: filepath.Join(vaultDir, "methodology", "Agent.md")},
+	}
+	result := Check(vaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for Edit to methodology/ in non-default vault 'MyNotes', got allowed")
+	}
+}
+
+func TestCheckFilePath_NonDefaultVaultName_AllowsInbox(t *testing.T) {
+	// Vault with non-default name: _inbox/ should remain writable.
+	vaultDir := filepath.Join(t.TempDir(), "MyNotes")
+	if err := os.MkdirAll(filepath.Join(vaultDir, "_inbox"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Edit",
+		ToolInput: ToolInput{FilePath: filepath.Join(vaultDir, "_inbox", "New.md")},
+	}
+	result := Check(vaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected allowed for Edit to _inbox/ in non-default vault 'MyNotes', got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckFilePath_SubdirectoryVault_BlocksProtectedDir(t *testing.T) {
+	// Vault nested inside a parent directory (/tmp/.../parent/subvault).
+	// Edit to decisions/ inside must be blocked.
+	parentDir := filepath.Join(t.TempDir(), "parent")
+	vaultDir := filepath.Join(parentDir, "subvault")
+	if err := os.MkdirAll(filepath.Join(vaultDir, "decisions"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Edit",
+		ToolInput: ToolInput{FilePath: filepath.Join(vaultDir, "decisions", "Dec.md")},
+	}
+	result := Check(vaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for Edit to decisions/ in subdirectory vault, got allowed")
+	}
+}
+
+func TestCheckFilePath_SubdirectoryVault_AllowsFileOutsideVault(t *testing.T) {
+	// A file in the parent directory (outside vault root) should NOT be blocked.
+	parentDir := filepath.Join(t.TempDir(), "parent")
+	vaultDir := filepath.Join(parentDir, "subvault")
+	if err := os.MkdirAll(vaultDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a file in the parent (peer to the vault), outside the vault root.
+	otherFile := filepath.Join(parentDir, "other-file.md")
+
+	input := HookInput{
+		ToolName:  "Edit",
+		ToolInput: ToolInput{FilePath: otherFile},
+	}
+	result := Check(vaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected allowed for Edit to file outside subdirectory vault root, got blocked: %s", result.Reason)
+	}
+}
+
+func TestCheckBash_SubdirectoryVault_BlocksCpToConventions(t *testing.T) {
+	// Bash cp targeting conventions/ inside a subdirectory vault must be blocked.
+	parentDir := filepath.Join(t.TempDir(), "parent")
+	vaultDir := filepath.Join(parentDir, "subvault")
+	if err := os.MkdirAll(filepath.Join(vaultDir, "conventions"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `cp /tmp/x.md ` + filepath.Join(vaultDir, "conventions") + `/`},
+	}
+	result := Check(vaultDir, testProjectRoot, input)
+	if result.Allowed {
+		t.Errorf("expected blocked for cp to conventions/ in subdirectory vault, got allowed")
+	}
+}
+
+func TestCheckBash_NonDefaultVaultName_VltBypassWorks(t *testing.T) {
+	// vlt commands should be allowed regardless of vault name.
+	vaultDir := filepath.Join(t.TempDir(), "MyNotes")
+	if err := os.MkdirAll(filepath.Join(vaultDir, "methodology"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	input := HookInput{
+		ToolName:  "Bash",
+		ToolInput: ToolInput{Command: `vlt vault="MyNotes" append file="Agent" content="new section"`},
+	}
+	result := Check(vaultDir, testProjectRoot, input)
+	if !result.Allowed {
+		t.Errorf("expected vlt command allowed for non-default vault name 'MyNotes', got blocked: %s", result.Reason)
+	}
+}
