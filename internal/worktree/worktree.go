@@ -83,6 +83,35 @@ func SafeRemove(worktreePath string) RemoveResult {
 	}
 	result.ProjectRoot = root
 
+	// CWD safety guard: refuse to remove a worktree if the caller's CWD is
+	// inside it, because deleting the directory would permanently break the
+	// shell session (all subsequent exec calls fail with ENOENT on the CWD).
+	if cwd, err := os.Getwd(); err == nil {
+		cwdClean := filepath.Clean(cwd)
+		wtClean := filepath.Clean(worktreePath)
+		if wtAbs, err := filepath.Abs(wtClean); err == nil {
+			wtClean = wtAbs
+		}
+		if cwdAbs, err := filepath.Abs(cwdClean); err == nil {
+			cwdClean = cwdAbs
+		}
+		// Resolve symlinks so /tmp vs /private/tmp don't defeat the check.
+		if resolved, err := filepath.EvalSymlinks(cwdClean); err == nil {
+			cwdClean = resolved
+		}
+		if resolved, err := filepath.EvalSymlinks(wtClean); err == nil {
+			wtClean = resolved
+		}
+		if cwdClean == wtClean || strings.HasPrefix(cwdClean, wtClean+string(filepath.Separator)) {
+			result.Error = fmt.Sprintf(
+				"REFUSED: CWD %q is inside worktree %q -- removing it would permanently break this shell session. Run 'cd %s' first, then retry.",
+				cwdClean, wtClean, root,
+			)
+			return result
+		}
+	}
+	// If os.Getwd() fails the CWD is already gone; proceed with removal.
+
 	// Remove the worktree using -C to run from the project root.
 	cmd := execCommand("git", "-C", root, "worktree", "remove", "--force", worktreePath)
 	if out, err := cmd.CombinedOutput(); err != nil {

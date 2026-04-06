@@ -208,6 +208,160 @@ func TestSafeRemove_Integration(t *testing.T) {
 	}
 }
 
+// TestSafeRemove_RefusesCwdInside verifies the CWD safety guard:
+// if the caller's CWD is inside the worktree, removal is refused.
+func TestSafeRemove_RefusesCwdInside(t *testing.T) {
+	root := t.TempDir()
+
+	origExec := execCommand
+	t.Cleanup(func() { execCommand = origExec })
+
+	// Init git repo
+	cmd := exec.Command("git", "init", root)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git init failed (git not available?): %s", out)
+	}
+
+	// Need at least one commit for worktrees to work.
+	cmd = exec.Command("git", "-C", root, "commit", "--allow-empty", "-m", "init")
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test",
+		"GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test",
+		"GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git commit failed: %s", out)
+	}
+
+	// Create a branch for the worktree
+	cmd = exec.Command("git", "-C", root, "branch", "story/CWD-GUARD")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git branch failed: %s", out)
+	}
+
+	// Create the worktree directory structure (Paivot convention)
+	wtDir := filepath.Join(root, ".claude", "worktrees")
+	if err := os.MkdirAll(wtDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	wtPath := filepath.Join(wtDir, "dev-CWD-GUARD")
+	cmd = exec.Command("git", "-C", root, "worktree", "add", wtPath, "story/CWD-GUARD")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add failed: %s", out)
+	}
+
+	// Verify the worktree exists
+	if !isDir(wtPath) {
+		t.Fatalf("worktree dir does not exist at %s", wtPath)
+	}
+
+	// Save original CWD and restore it after the test.
+	origCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(origCwd) })
+
+	// Move into the worktree directory
+	if err := os.Chdir(wtPath); err != nil {
+		t.Fatalf("os.Chdir(%s): %v", wtPath, err)
+	}
+
+	// SafeRemove should refuse since CWD is inside the worktree.
+	result := SafeRemove(wtPath)
+	if result.Removed {
+		t.Error("expected Removed=false when CWD is inside worktree")
+	}
+	if !contains(result.Error, "REFUSED") {
+		t.Errorf("expected error to contain 'REFUSED', got %q", result.Error)
+	}
+
+	// Verify the worktree directory was NOT deleted.
+	if !isDir(wtPath) {
+		t.Error("worktree dir was deleted despite CWD being inside it")
+	}
+}
+
+// TestSafeRemove_AllowsRemovalFromOutside confirms the CWD guard does not
+// block removal when CWD is outside the worktree.
+func TestSafeRemove_AllowsRemovalFromOutside(t *testing.T) {
+	root := t.TempDir()
+
+	origExec := execCommand
+	t.Cleanup(func() { execCommand = origExec })
+
+	// Init git repo
+	cmd := exec.Command("git", "init", root)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git init failed (git not available?): %s", out)
+	}
+
+	// Need at least one commit for worktrees to work.
+	cmd = exec.Command("git", "-C", root, "commit", "--allow-empty", "-m", "init")
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test",
+		"GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test",
+		"GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git commit failed: %s", out)
+	}
+
+	// Create a branch for the worktree
+	cmd = exec.Command("git", "-C", root, "branch", "story/OUTSIDE")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git branch failed: %s", out)
+	}
+
+	// Create the worktree directory structure (Paivot convention)
+	wtDir := filepath.Join(root, ".claude", "worktrees")
+	if err := os.MkdirAll(wtDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	wtPath := filepath.Join(wtDir, "dev-OUTSIDE")
+	cmd = exec.Command("git", "-C", root, "worktree", "add", wtPath, "story/OUTSIDE")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add failed: %s", out)
+	}
+
+	if !isDir(wtPath) {
+		t.Fatalf("worktree dir does not exist at %s", wtPath)
+	}
+
+	// Confirm CWD is outside the worktree before calling SafeRemove.
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd: %v", err)
+	}
+	wtAbs, _ := filepath.Abs(wtPath)
+	cwdClean := filepath.Clean(cwd)
+	wtClean := filepath.Clean(wtAbs)
+	if cwdClean == wtClean || contains(cwdClean, wtClean+string(filepath.Separator)) {
+		t.Fatalf("CWD %q is unexpectedly inside worktree %q", cwdClean, wtClean)
+	}
+
+	// SafeRemove should succeed since CWD is outside.
+	result := SafeRemove(wtPath)
+	if result.Error != "" {
+		t.Fatalf("SafeRemove error: %s", result.Error)
+	}
+	if !result.Removed {
+		t.Error("expected Removed=true when CWD is outside worktree")
+	}
+	if result.ProjectRoot != root {
+		t.Errorf("ProjectRoot = %q, want %q", result.ProjectRoot, root)
+	}
+
+	// Verify the worktree is gone
+	if isDir(wtPath) {
+		t.Error("worktree dir still exists after removal")
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsSubstring(s, sub))
 }
