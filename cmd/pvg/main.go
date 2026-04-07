@@ -338,10 +338,25 @@ func runND(args []string) error {
 		return fmt.Errorf("usage: pvg nd root [--ensure] | pvg nd <nd-args...>")
 	}
 
-	if args[0] == "root" {
+	// resolveRoot returns the project root, preferring the main repo root
+	// when CWD is inside a worktree. Worktrees have a .vault/ from the git
+	// checkout but it lacks gitignored nd runtime data (issues/, .nd.yaml).
+	// Using the main repo root ensures vault resolution finds the real nd vault.
+	resolveRoot := func() (string, error) {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return fmt.Errorf("cannot determine working directory: %w", err)
+			return "", fmt.Errorf("cannot determine working directory: %w", err)
+		}
+		if mainRoot, resolveErr := worktree.ResolveProjectRoot(cwd); resolveErr == nil {
+			return mainRoot, nil
+		}
+		return cwd, nil
+	}
+
+	if args[0] == "root" {
+		projectRoot, err := resolveRoot()
+		if err != nil {
+			return err
 		}
 		ensure := false
 		for _, arg := range args[1:] {
@@ -353,9 +368,9 @@ func runND(args []string) error {
 		}
 		var vaultDir string
 		if ensure {
-			vaultDir, err = ndvault.Ensure(cwd)
+			vaultDir, err = ndvault.Ensure(projectRoot)
 		} else {
-			vaultDir, err = ndvault.Resolve(cwd)
+			vaultDir, err = ndvault.Resolve(projectRoot)
 		}
 		if err != nil {
 			return err
@@ -370,12 +385,12 @@ func runND(args []string) error {
 		}
 	}
 
-	cwd, err := os.Getwd()
+	projectRoot, err := resolveRoot()
 	if err != nil {
-		return fmt.Errorf("cannot determine working directory: %w", err)
+		return err
 	}
 
-	vaultDir, err := ndvault.Ensure(cwd)
+	vaultDir, err := ndvault.Ensure(projectRoot)
 	if err != nil {
 		return fmt.Errorf("ensure nd vault: %w", err)
 	}
