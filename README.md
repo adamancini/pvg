@@ -92,6 +92,61 @@ make build     # produces ./pvg binary
 make install   # installs to $GOPATH/bin
 ```
 
+## Configuration
+
+### PVG_VAULT
+
+The `PVG_VAULT` environment variable controls which Obsidian vault pvg operates against. When unset, pvg defaults to a vault named `"Claude"` for backward compatibility.
+
+`PVG_VAULT` accepts three formats:
+
+| Format | Example | Resolution |
+|--------|---------|------------|
+| Vault name | `MyKnowledgeBase` | Looked up via Obsidian's vault registry (`vlt.OpenByName`) |
+| Absolute path | `/Users/you/Documents/SharedVault` | Used directly |
+| `~`-relative path | `~/Documents/SharedVault` | Expanded to home directory, used directly |
+
+**Examples:**
+
+```bash
+# Use a vault registered in Obsidian by name
+export PVG_VAULT=MyKnowledgeBase
+pvg seed
+
+# Use an absolute path (does not need to be registered in Obsidian)
+PVG_VAULT=/opt/team-vault pvg hook session-start
+
+# Use a ~-relative path for a one-off command
+PVG_VAULT=~/Documents/SharedVault pvg seed
+```
+
+When `PVG_VAULT` is not set, pvg behaves exactly as it always has -- it targets the vault named `"Claude"`. Existing installations require no changes.
+
+The implementation lives in `internal/vaultcfg/vaultcfg.go`: `VaultName()` reads the environment variable and falls back to the `DefaultVaultName` constant (`"Claude"`). `VaultDir()` then resolves the name to a directory via `vlt.OpenByName()`, with a fallback to the conventional iCloud path.
+
+## Vault Coexistence
+
+pvg can operate inside a subdirectory of an existing Obsidian vault rather than requiring a dedicated vault. This is useful when you already have a personal knowledge base and want pvg's agent prompts, conventions, and session state to live alongside your own notes.
+
+### Setup
+
+1. Create a folder inside your existing vault for pvg to use (e.g., `pvg/` inside `~/Documents/MyVault/`).
+2. Set `PVG_VAULT` to that folder's path:
+
+```bash
+export PVG_VAULT=~/Documents/MyVault/pvg
+```
+
+3. Run `pvg seed` to populate the subdirectory with agent prompts and conventions.
+
+The scope guard will protect only the directories under that configured root (`methodology/`, `conventions/`, `decisions/`, etc. relative to `~/Documents/MyVault/pvg/`). Your other vault content remains untouched and unguarded.
+
+### Caveats
+
+- **`vlt.OpenByName()` looks up vaults by directory basename in Obsidian's config.** If you point `PVG_VAULT` at a subdirectory (e.g., `~/Documents/MyVault/pvg`), Obsidian does not register subdirectories as vaults. You must use an absolute or `~`-relative path rather than a bare name when targeting a subdirectory.
+- **Vault seeding writes are scoped.** `pvg seed` writes its notes relative to `PVG_VAULT`. It will not modify files outside that directory.
+- **The scope guard is path-based.** It protects paths under the configured vault root. If your existing vault has its own `methodology/` folder outside the pvg subdirectory, that folder is not affected.
+
 ## Command reference
 
 ### Lifecycle hooks
