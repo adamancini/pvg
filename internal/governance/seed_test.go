@@ -243,3 +243,81 @@ func TestWriteNoteConflictMarkers(t *testing.T) {
 		t.Errorf("ConflictedFiles = %v, want [%s]", counters2.ConflictedFiles, relPath)
 	}
 }
+
+func TestSeedSessionOperatingMode_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	counters := &Counters{}
+
+	seedSessionOperatingMode(vaultDir, baseDir, "2026-04-06", false, counters)
+
+	if counters.Created != 1 {
+		t.Fatalf("expected Created=1, got %d", counters.Created)
+	}
+
+	data, err := os.ReadFile(filepath.Join(vaultDir, "conventions", "Session Operating Mode.md"))
+	if err != nil {
+		t.Fatalf("reading seeded note: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, `vault="TestVault"`) {
+		t.Error("seeded Session Operating Mode should contain configured vault name TestVault")
+	}
+	if strings.Contains(content, `vault="Claude"`) {
+		t.Error("seeded Session Operating Mode should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}
+
+func TestSeedPreCompactChecklist_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	counters := &Counters{}
+
+	seedPreCompactChecklist(vaultDir, baseDir, "2026-04-06", false, counters)
+
+	if counters.Created != 1 {
+		t.Fatalf("expected Created=1, got %d", counters.Created)
+	}
+
+	data, err := os.ReadFile(filepath.Join(vaultDir, "conventions", "Pre-Compact Checklist.md"))
+	if err != nil {
+		t.Fatalf("reading seeded note: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, `vault="TestVault"`) {
+		t.Error("seeded Pre-Compact Checklist should contain configured vault name TestVault")
+	}
+	if strings.Contains(content, `vault="Claude"`) {
+		t.Error("seeded Pre-Compact Checklist should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}
+
+func TestSeedStopCaptureChecklist_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	counters := &Counters{}
+
+	seedStopCaptureChecklist(vaultDir, baseDir, "2026-04-06", false, counters)
+
+	if counters.Created != 1 {
+		t.Fatalf("expected Created=1, got %d", counters.Created)
+	}
+
+	data, err := os.ReadFile(filepath.Join(vaultDir, "conventions", "Stop Capture Checklist.md"))
+	if err != nil {
+		t.Fatalf("reading seeded note: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, `vault="TestVault"`) {
+		t.Error("seeded Stop Capture Checklist should contain configured vault name TestVault")
+	}
+	if strings.Contains(content, `vault="Claude"`) {
+		t.Error("seeded Stop Capture Checklist should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}

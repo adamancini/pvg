@@ -68,7 +68,8 @@ func outputTwoTierReminder() {
 }
 
 func staticStopChecklist() string {
-	return `[VAULT] Stop capture check:
+	vaultName := vaultcfg.VaultName()
+	return fmt.Sprintf(`[VAULT] Stop capture check:
 
 Before ending this session, confirm you have considered each of these:
 
@@ -80,8 +81,8 @@ Before ending this session, confirm you have considered each of these:
 
 If none apply (trivial session), that is fine -- but confirm it was considered.
 
-Use: vlt vault="Claude" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
-`
+Use: vlt vault="%s" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
+`, vaultName)
 }
 
 // checkLoop evaluates whether the execution loop should continue or allow exit.

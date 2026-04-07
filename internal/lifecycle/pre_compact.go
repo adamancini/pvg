@@ -51,14 +51,15 @@ func outputTwoTierGuidance() {
 	cwd, _ := os.Getwd()
 	knowledgeDir := filepath.Join(cwd, ".vault", "knowledge")
 	if info, err := os.Stat(knowledgeDir); err == nil && info.IsDir() {
-		fmt.Print(`
+		vaultName := vaultcfg.VaultName()
+		fmt.Printf(`
 [VAULT] Where to save knowledge:
   - Universal insights (applicable to ANY project) -> global vault _inbox/
-      vlt vault="Claude" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
+      vlt vault="%s" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
   - Project-specific insights (only relevant HERE) -> .vault/knowledge/ locally
       Use vlt against the local vault, for example:
       vlt vault=".vault" create name="<Title>" path="knowledge/decisions/<Title>.md" content="..." silent
-`)
+`, vaultName)
 	}
 }
 
@@ -114,24 +115,25 @@ This rule persists across compaction boundaries.
 }
 
 func staticPreCompact() string {
-	return `[VAULT] Context compaction imminent -- capture knowledge now.
+	vaultName := vaultcfg.VaultName()
+	return fmt.Sprintf(`[VAULT] Context compaction imminent -- capture knowledge now.
 
 Before this context is compacted, save anything worth remembering:
 
 1. DECISIONS made this session (with rationale and alternatives considered):
-   vlt vault="Claude" create name="<Decision Title>" path="_inbox/<Decision Title>.md" content="..." silent
+   vlt vault="%s" create name="<Decision Title>" path="_inbox/<Decision Title>.md" content="..." silent
 
 2. PATTERNS discovered (reusable solutions):
-   vlt vault="Claude" create name="<Pattern Name>" path="_inbox/<Pattern Name>.md" content="..." silent
+   vlt vault="%s" create name="<Pattern Name>" path="_inbox/<Pattern Name>.md" content="..." silent
 
 3. DEBUG INSIGHTS (problems solved):
-   vlt vault="Claude" create name="<Bug Title>" path="_inbox/<Bug Title>.md" content="..." silent
+   vlt vault="%s" create name="<Bug Title>" path="_inbox/<Bug Title>.md" content="..." silent
 
 4. PROJECT UPDATES (progress, state changes):
-   vlt vault="Claude" append file="<Project>" content="## Session update (<date>)\n- <what was accomplished>"
+   vlt vault="%s" append file="<Project>" content="## Session update (<date>)\n- <what was accomplished>"
 
 All notes must have frontmatter: type, project, status, created.
 
 Do this NOW -- after compaction, the details will be lost.
-`
+`, vaultName, vaultName, vaultName, vaultName)
 }

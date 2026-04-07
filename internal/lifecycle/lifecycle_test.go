@@ -1,7 +1,9 @@
 package lifecycle
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +117,25 @@ func TestStaticOperatingMode_ContainsKeyContent(t *testing.T) {
 	}
 }
 
+func TestStaticOperatingMode_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+	mode := staticOperatingMode()
+	if !strings.Contains(mode, `vault="TestVault"`) {
+		t.Error("staticOperatingMode() should contain configured vault name TestVault")
+	}
+	if strings.Contains(mode, `vault="Claude"`) {
+		t.Error("staticOperatingMode() should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}
+
+func TestStaticOperatingMode_DefaultsToClaudeVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "")
+	mode := staticOperatingMode()
+	if !strings.Contains(mode, `vault="Claude"`) {
+		t.Error("staticOperatingMode() should default to vault=\"Claude\" when PVG_VAULT is unset")
+	}
+}
+
 func TestFormatVaultSearchOutput_NoResults(t *testing.T) {
 	got := formatVaultSearchOutput(nil, nil)
 	want := "(none found -- this is a new project to the vault)"
@@ -184,6 +205,43 @@ func TestStaticDispatcherReminder_ContainsKeyContent(t *testing.T) {
 	}
 }
 
+func TestOutputTwoTierGuidance_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+
+	dir := t.TempDir()
+	knowledgeDir := filepath.Join(dir, ".vault", "knowledge")
+	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	outputTwoTierGuidance()
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	if !strings.Contains(output, `vault="TestVault"`) {
+		t.Errorf("outputTwoTierGuidance() should contain configured vault name TestVault, got: %s", output)
+	}
+	if strings.Contains(output, `vault="Claude"`) {
+		t.Errorf("outputTwoTierGuidance() should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}
+
 func TestOutputDispatcherReminder_NoopWhenInactive(t *testing.T) {
 	// In a temp dir with no state file, outputDispatcherReminder should be a no-op.
 	// We can't easily capture stdout here, but at minimum verify no panic.
@@ -213,6 +271,25 @@ func TestStaticPreCompact_ContainsKeyContent(t *testing.T) {
 	}
 }
 
+func TestStaticPreCompact_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+	text := staticPreCompact()
+	if !strings.Contains(text, `vault="TestVault"`) {
+		t.Error("staticPreCompact() should contain configured vault name TestVault")
+	}
+	if strings.Contains(text, `vault="Claude"`) {
+		t.Error("staticPreCompact() should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}
+
+func TestStaticPreCompact_DefaultsToClaudeVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "")
+	text := staticPreCompact()
+	if !strings.Contains(text, `vault="Claude"`) {
+		t.Error("staticPreCompact() should default to vault=\"Claude\" when PVG_VAULT is unset")
+	}
+}
+
 func TestStaticStopChecklist_ContainsKeyContent(t *testing.T) {
 	text := staticStopChecklist()
 	checks := []string{
@@ -225,6 +302,25 @@ func TestStaticStopChecklist_ContainsKeyContent(t *testing.T) {
 		if !strings.Contains(text, check) {
 			t.Errorf("static stop checklist missing %q", check)
 		}
+	}
+}
+
+func TestStaticStopChecklist_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+	text := staticStopChecklist()
+	if !strings.Contains(text, `vault="TestVault"`) {
+		t.Error("staticStopChecklist() should contain configured vault name TestVault")
+	}
+	if strings.Contains(text, `vault="Claude"`) {
+		t.Error("staticStopChecklist() should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}
+
+func TestStaticStopChecklist_DefaultsToClaudeVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "")
+	text := staticStopChecklist()
+	if !strings.Contains(text, `vault="Claude"`) {
+		t.Error("staticStopChecklist() should default to vault=\"Claude\" when PVG_VAULT is unset")
 	}
 }
 

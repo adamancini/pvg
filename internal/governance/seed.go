@@ -412,6 +412,7 @@ created: %s
 }
 
 func seedSessionOperatingMode(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	vaultName := vaultcfg.VaultName()
 	content := fmt.Sprintf(`---
 type: convention
 scope: system
@@ -443,16 +444,16 @@ CONCURRENCY LIMITS (HARD RULE -- unless user explicitly overrides):
   These limits prevent context and machine resource exhaustion.
 
 BEFORE STARTING: Read the vault notes listed above. Do not rediscover what is already known.
-  vlt vault="Claude" read file="<note>"
+  vlt vault="%s" read file="<note>"
 
 WHILE WORKING: Capture knowledge as it emerges -- do not wait for the end.
   - After making a decision (chose X over Y): create a decision note
   - After solving a non-obvious bug: create a debug note
   - After discovering a reusable pattern: create a pattern note
-  Use: vlt vault="Claude" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
+  Use: vlt vault="%s" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
 
 BEFORE ENDING: Update the project index note with what was accomplished.
-  vlt vault="Claude" append file="<Project>" content="## Session update (<date>)\n- <what was done>"
+  vlt vault="%s" append file="<Project>" content="## Session update (<date>)\n- <what was done>"
 
 This is not optional. Knowledge that is not captured is knowledge that will be rediscovered at cost.
 
@@ -626,12 +627,13 @@ When D&F is not needed (skip entirely):
 ## Changelog
 
 - %s: Seeded from paivot-graph plugin (initial version)
-`, today, today)
+`, today, vaultName, vaultName, vaultName, today)
 
 	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Session Operating Mode.md"), content, force, counters)
 }
 
 func seedPreCompactChecklist(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	vaultName := vaultcfg.VaultName()
 	content := fmt.Sprintf(`---
 type: convention
 scope: system
@@ -649,7 +651,7 @@ Context compaction is imminent. Save anything worth remembering NOW.
 ## 1. DECISIONS made this session
 
 Record any decisions with rationale and alternatives considered:
-  vlt vault="Claude" create name="<Decision Title>" path="_inbox/<Decision Title>.md" content="..." silent
+  vlt vault="%s" create name="<Decision Title>" path="_inbox/<Decision Title>.md" content="..." silent
 
 Include frontmatter: type: decision, project: <project>, status: active, confidence: high, created: <YYYY-MM-DD>
 Include sections: Decision, Rationale, Alternatives considered.
@@ -657,7 +659,7 @@ Include sections: Decision, Rationale, Alternatives considered.
 ## 2. PATTERNS discovered
 
 Record reusable solutions:
-  vlt vault="Claude" create name="<Pattern Name>" path="_inbox/<Pattern Name>.md" content="..." silent
+  vlt vault="%s" create name="<Pattern Name>" path="_inbox/<Pattern Name>.md" content="..." silent
 
 Include frontmatter: type: pattern, project: <project>, stack: [], status: active, created: <YYYY-MM-DD>
 Include sections: When to use, Implementation.
@@ -665,26 +667,27 @@ Include sections: When to use, Implementation.
 ## 3. DEBUG INSIGHTS
 
 Record problems solved:
-  vlt vault="Claude" create name="<Bug Title>" path="_inbox/<Bug Title>.md" content="..." silent
+  vlt vault="%s" create name="<Bug Title>" path="_inbox/<Bug Title>.md" content="..." silent
 
 Include frontmatter: type: debug, project: <project>, status: active, created: <YYYY-MM-DD>
 Include sections: Symptoms, Root cause, Fix.
 
 ## 4. PROJECT UPDATES
 
-  vlt vault="Claude" append file="<Project>" content="## Session update (<YYYY-MM-DD>)\n- <what was accomplished>"
+  vlt vault="%s" append file="<Project>" content="## Session update (<YYYY-MM-DD>)\n- <what was accomplished>"
 
 Do this NOW -- after compaction, the details will be lost.
 
 ## Changelog
 
 - %s: Seeded from paivot-graph plugin (initial version)
-`, today, today)
+`, today, vaultName, vaultName, vaultName, vaultName, today)
 
 	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Pre-Compact Checklist.md"), content, force, counters)
 }
 
 func seedStopCaptureChecklist(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	vaultName := vaultcfg.VaultName()
 	content := fmt.Sprintf(`---
 type: convention
 scope: system
@@ -706,12 +709,12 @@ Before ending this session, confirm you have considered each of these:
 
 If none of the above apply (e.g., quick fix, trivial session), that is fine -- but confirm it was considered, not forgotten.
 
-Use vlt to create notes: vlt vault="Claude" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
+Use vlt to create notes: vlt vault="%s" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
 
 ## Changelog
 
 - %s: Seeded from paivot-graph plugin (initial version)
-`, today, today)
+`, today, vaultName, today)
 
 	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Stop Capture Checklist.md"), content, force, counters)
 }

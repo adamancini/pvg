@@ -311,7 +311,8 @@ func cleanupStaleLoop(cwd string) {
 }
 
 func staticOperatingMode() string {
-	return `[VAULT] Operating mode for this session:
+	vaultName := vaultcfg.VaultName()
+	return fmt.Sprintf(`[VAULT] Operating mode for this session:
 
 CONCURRENCY LIMITS (HARD RULE -- unless user explicitly overrides):
   Limits are stack-dependent. Detect from project files (Cargo.toml, *.xcodeproj,
@@ -332,16 +333,16 @@ CONCURRENCY LIMITS (HARD RULE -- unless user explicitly overrides):
   These limits prevent context and machine resource exhaustion.
 
 BEFORE STARTING: Read the vault notes listed above. Do not rediscover what is already known.
-  vlt vault="Claude" read file="<note>"
+  vlt vault="%s" read file="<note>"
 
 WHILE WORKING: Capture knowledge as it emerges -- do not wait for the end.
   - After making a decision (chose X over Y): create a decision note
   - After solving a non-obvious bug: create a debug note
   - After discovering a reusable pattern: create a pattern note
-  Use: vlt vault="Claude" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
+  Use: vlt vault="%s" create name="<Title>" path="_inbox/<Title>.md" content="..." silent
 
 BEFORE ENDING: Update the project index note with what was accomplished.
-  vlt vault="Claude" append file="<Project>" content="## Session update (<date>)\n- <what was done>"
+  vlt vault="%s" append file="<Project>" content="## Session update (<date>)\n- <what was done>"
 
 This is not optional. Knowledge that is not captured is knowledge that will be rediscovered at cost.
 
@@ -363,5 +364,5 @@ D&F ORCHESTRATION: BLT agents produce the three documents sequentially.
   Light D&F (brownfield, or user requests "light"/"quick"):
   Same BLT sequence, but agents draft with fewer questioning rounds. The agents
   STILL produce the files. You do NOT write them yourself.
-`
+`, vaultName, vaultName, vaultName)
 }
