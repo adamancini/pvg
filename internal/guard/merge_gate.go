@@ -16,7 +16,13 @@ import (
 var gitIntegrationRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?git\s+(merge|pull|rebase|cherry-pick)\b`)
 var storyRefRe = regexp.MustCompile(`(?:^|[\s"'=])(?:refs/(?:remotes/origin|heads)/|origin/)?story/([A-Za-z0-9._-]+)`)
 var shaRefRe = regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
-var gitCheckoutRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?git\s+checkout\s+([\w/.-]+)`)
+
+// gitCheckoutRe matches git checkout commands. Handles both:
+//
+//	git checkout <branch>
+//	git checkout -b <branch> [start-point]
+//	git checkout -B <branch> [start-point]
+var gitCheckoutRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:\S*/)?git\s+checkout\s+(?:-[bB]\s+)?([\w/.-]+)`)
 
 const mergeGateBlockMsg = "BLOCKED: Cannot merge story branch before PM-Acceptor completion.\n\n" +
 	"Story %s must be both labeled 'accepted' and closed in nd before merge.\n" +
