@@ -89,9 +89,13 @@ func SafeRemove(worktreePath string) RemoveResult {
 	if cwd, err := os.Getwd(); err == nil {
 		cwdClean := filepath.Clean(cwd)
 		wtClean := filepath.Clean(worktreePath)
-		if wtAbs, err := filepath.Abs(wtClean); err == nil {
-			wtClean = wtAbs
+		// Resolve relative worktree path from project root, not from CWD.
+		// filepath.Abs() is wrong here because CWD may have drifted into the
+		// worktree, causing double-nested wrong path resolution.
+		if !filepath.IsAbs(wtClean) {
+			wtClean = filepath.Join(root, wtClean)
 		}
+		wtClean = filepath.Clean(wtClean)
 		if cwdAbs, err := filepath.Abs(cwdClean); err == nil {
 			cwdClean = cwdAbs
 		}

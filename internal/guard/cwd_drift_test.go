@@ -17,7 +17,9 @@ func TestCheckCWDDrift_NormalCWD(t *testing.T) {
 
 func TestCheckCWDDrift_WorktreeCWDWithActiveAgent(t *testing.T) {
 	// Simulate: CWD inside worktree, dispatcher active, developer agent active.
-	// This should be ALLOWED (developer legitimately working there).
+	// This should be BLOCKED -- the dispatcher never needs CWD inside a worktree.
+	// Developer subagent Bash commands run in the DEVELOPER'S own session.
+	// Previously this was incorrectly allowed, which neutralized the guard.
 
 	root := t.TempDir()
 	worktreeDir := filepath.Join(root, ".claude", "worktrees", "dev-TEST-001")
@@ -56,8 +58,11 @@ func TestCheckCWDDrift_WorktreeCWDWithActiveAgent(t *testing.T) {
 	defer func() { _ = os.Chdir(origDir) }()
 
 	result := CheckCWDDrift(root)
-	if !result.Allowed {
-		t.Fatalf("expected allowed (active developer agent), got blocked: %s", result.Reason)
+	if result.Allowed {
+		t.Fatal("expected BLOCKED (dispatcher CWD inside worktree), got allowed")
+	}
+	if result.Reason == "" {
+		t.Fatal("expected a reason message")
 	}
 }
 

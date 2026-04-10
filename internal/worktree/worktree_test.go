@@ -362,6 +362,93 @@ func TestSafeRemove_AllowsRemovalFromOutside(t *testing.T) {
 	}
 }
 
+// TestSafeRemove_RefusesCwdInsideRelativePath verifies the CWD safety guard
+// works correctly when SafeRemove is called with a RELATIVE path from the
+// project root, while CWD has drifted into the worktree itself. This is the
+// exact failure mode that caused session-fatal CWD corruption: filepath.Abs()
+// resolves the relative path using the drifted CWD, producing a double-nested
+// wrong path that fails to match, silently allowing the removal.
+func TestSafeRemove_RefusesCwdInsideRelativePath(t *testing.T) {
+	root := t.TempDir()
+
+	origExec := execCommand
+	t.Cleanup(func() { execCommand = origExec })
+
+	// Init git repo
+	cmd := exec.Command("git", "init", root)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git init failed (git not available?): %s", out)
+	}
+
+	// Need at least one commit for worktrees to work.
+	cmd = exec.Command("git", "-C", root, "commit", "--allow-empty", "-m", "init")
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test",
+		"GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test",
+		"GIT_COMMITTER_EMAIL=test@test.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git commit failed: %s", out)
+	}
+
+	// Create a branch for the worktree
+	cmd = exec.Command("git", "-C", root, "branch", "story/REL-PATH")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git branch failed: %s", out)
+	}
+
+	// Create the worktree directory structure (Paivot convention)
+	wtDir := filepath.Join(root, ".claude", "worktrees")
+	if err := os.MkdirAll(wtDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	wtPath := filepath.Join(wtDir, "dev-REL-PATH")
+	cmd = exec.Command("git", "-C", root, "worktree", "add", wtPath, "story/REL-PATH")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add failed: %s", out)
+	}
+
+	// Verify the worktree exists
+	if !isDir(wtPath) {
+		t.Fatalf("worktree dir does not exist at %s", wtPath)
+	}
+
+	// Save original CWD and restore it after the test.
+	origCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(origCwd) })
+
+	// Move into the worktree directory (simulates CWD drift)
+	if err := os.Chdir(wtPath); err != nil {
+		t.Fatalf("os.Chdir(%s): %v", wtPath, err)
+	}
+
+	// Compute the RELATIVE path from project root -- this is what the
+	// dispatcher passes to SafeRemove in the real failure case.
+	relPath, err := filepath.Rel(root, wtPath)
+	if err != nil {
+		t.Fatalf("filepath.Rel(%s, %s): %v", root, wtPath, err)
+	}
+
+	// SafeRemove with relative path should refuse since CWD is inside the worktree.
+	result := SafeRemove(relPath)
+	if result.Removed {
+		t.Error("expected Removed=false when CWD is inside worktree (relative path)")
+	}
+	if !contains(result.Error, "REFUSED") {
+		t.Errorf("expected error to contain 'REFUSED', got %q", result.Error)
+	}
+
+	// Verify the worktree directory was NOT deleted.
+	if !isDir(wtPath) {
+		t.Error("worktree dir was deleted despite CWD being inside it (relative path)")
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsSubstring(s, sub))
 }

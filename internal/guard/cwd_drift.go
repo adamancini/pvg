@@ -15,14 +15,14 @@ import (
 // session-fatal failure mode where the dispatcher removes a worktree while CWD
 // is inside it, permanently breaking all subsequent Bash commands.
 //
-// The check only fires when ALL conditions are met:
+// The check fires when BOTH conditions are met:
 //   - CWD is inside .claude/worktrees/
 //   - Dispatcher mode is active (Paivot is running)
-//   - No developer/PM agent is currently tracked at that worktree path
 //
-// When a developer IS active, their Bash commands legitimately run inside the
-// worktree. The drift is only dangerous after the agent completes and control
-// returns to the dispatcher.
+// Developer subagent Bash commands run in the DEVELOPER'S own session, not the
+// dispatcher's. The dispatcher never needs CWD inside a worktree. Any CWD drift
+// into a worktree while dispatcher mode is on indicates a completed subagent
+// whose CWD persisted in the dispatcher shell.
 func CheckCWDDrift(projectRoot string) Result {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -47,23 +47,7 @@ func CheckCWDDrift(projectRoot string) Result {
 		return Result{Allowed: true}
 	}
 
-	// Resolve symlinks on CWD for reliable comparison (macOS /var -> /private/var).
-	resolvedCWD := cwd
-	if resolved, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
-		resolvedCWD = resolved
-	}
-
-	// If a developer or PM agent is currently active at this worktree path,
-	// the CWD is legitimate -- the agent is working here.
-	// Check both raw and resolved CWD to handle symlink differences.
-	for _, agentType := range []string{"paivot-graph:developer", "paivot-graph:pm"} {
-		if dispatcher.HasActiveAgentTypeAtPath(state, agentType, cwd) ||
-			dispatcher.HasActiveAgentTypeAtPath(state, agentType, resolvedCWD) {
-			return Result{Allowed: true}
-		}
-	}
-
-	// CWD is inside a worktree, dispatcher mode is on, no agent is active here.
+	// CWD is inside a worktree and dispatcher mode is on.
 	// This means CWD drifted from a completed subagent.
 	return Result{
 		Allowed: false,
