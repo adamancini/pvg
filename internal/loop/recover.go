@@ -30,11 +30,12 @@ type RecoverAction struct {
 // RecoverConfig holds all inputs needed for recovery evaluation.
 // Constructed by BuildRecoverConfig -- main.go never builds this directly.
 type RecoverConfig struct {
-	SnapshotStories  []SnapshotEntry
-	CurrentWorktrees []Worktree
-	InProgressIssues []ndIssue
-	StaleBranches    []string // local branches merged into main matching epic/*, story/*, worktree-*
-	Warnings         []string
+	SnapshotStories     []SnapshotEntry
+	CurrentWorktrees    []Worktree
+	InProgressIssues    []ndIssue
+	StaleBranches       []string // local branches merged into main matching epic/*, story/*, worktree-*
+	PMIsolationBranches []string // local worktree-agent-* branches (never merged to main)
+	Warnings            []string
 }
 
 // RecoverSummary counts what recovery did.
@@ -151,6 +152,19 @@ func EvaluateRecover(cfg RecoverConfig) RecoverPlan {
 		plan.Summary.StaleBranchesDeleted++
 	}
 
+	// PM isolation branches: worktree-agent-* are single-use. Delete unconditionally.
+	for _, branch := range cfg.PMIsolationBranches {
+		if scheduledBranches[branch] {
+			continue
+		}
+		plan.Actions = append(plan.Actions, RecoverAction{
+			Kind:       ActionDeleteBranch,
+			BranchName: branch,
+			Reason:     "PM isolation branch cleanup (single-use, never merged to main)",
+		})
+		plan.Summary.BranchesDeleted++
+	}
+
 	return plan
 }
 
@@ -197,6 +211,15 @@ func BuildRecoverConfig(projectRoot string) (RecoverConfig, error) {
 		cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("stale branch detection unavailable: %v", err))
 	} else {
 		cfg.StaleBranches = staleBranches
+	}
+
+	// PM isolation branches: worktree-agent-* are single-use, never merged to main.
+	// Always safe to delete unconditionally.
+	pmBranches, err := ListWorktreeAgentBranches(projectRoot)
+	if err != nil {
+		cfg.Warnings = append(cfg.Warnings, fmt.Sprintf("PM isolation branch detection unavailable: %v", err))
+	} else {
+		cfg.PMIsolationBranches = pmBranches
 	}
 
 	return cfg, nil

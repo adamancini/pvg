@@ -184,6 +184,32 @@ func ListMergedBranches(projectRoot string) ([]string, error) {
 	return branches, nil
 }
 
+// ListWorktreeAgentBranches returns all local branches matching worktree-agent-*.
+// These are single-use PM isolation branches created by Claude Code's
+// isolation: "worktree" feature. Unlike story/epic branches, they are never
+// merged into main -- so ListMergedBranches cannot catch them. They are always
+// safe to delete after the PM agent completes.
+func ListWorktreeAgentBranches(projectRoot string) ([]string, error) {
+	cmd := exec.Command("git", "branch", "--list", "worktree-agent-*")
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git branch --list worktree-agent-*: %w", err)
+	}
+	var branches []string
+	for _, line := range strings.Split(string(out), "\n") {
+		branch := strings.TrimSpace(line)
+		// Strip leading "* " or "+ " markers from git branch output
+		branch = strings.TrimPrefix(branch, "* ")
+		branch = strings.TrimPrefix(branch, "+ ")
+		branch = strings.TrimSpace(branch)
+		if branch != "" {
+			branches = append(branches, branch)
+		}
+	}
+	return branches, nil
+}
+
 // EpicBranchExists checks whether a local branch named epic/<epicID> exists.
 // Returns false on any error (fail open).
 func EpicBranchExists(projectRoot, epicID string) bool {
