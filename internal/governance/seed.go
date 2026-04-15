@@ -110,6 +110,18 @@ func Seed(force bool, pluginDir string) error {
 	seedPreCompactChecklist(vaultDir, baseDir, today, force, counters)
 	seedStopCaptureChecklist(vaultDir, baseDir, today, force, counters)
 
+	// 4. Seed companion notes
+	fmt.Println()
+	fmt.Println("Seeding companion notes...")
+	seedHardTDD(vaultDir, baseDir, today, force, counters)
+	seedTestingPhilosophy(vaultDir, baseDir, today, force, counters)
+	seedTwoLevelBranchModel(vaultDir, baseDir, today, force, counters)
+	seedDeliveryWorkflow(vaultDir, baseDir, today, force, counters)
+	seedVaultAsRuntimeNotReference(vaultDir, baseDir, today, force, counters)
+	seedSubagentQuestionRelay(vaultDir, baseDir, today, force, counters)
+	seedSubagentsAdvisoryInstructions(vaultDir, baseDir, today, force, counters)
+	seedDFSequentialAlignment(vaultDir, baseDir, today, force, counters)
+
 	fmt.Println()
 	fmt.Printf("Done. Created: %d, Updated: %d, Merged: %d, Conflicted: %d, Skipped: %d\n",
 		counters.Created, counters.Updated, counters.Merged, counters.Conflicted, counters.Skipped)
@@ -717,4 +729,563 @@ Use vlt to create notes: vlt vault="%s" create name="<Title>" path="_inbox/<Titl
 `, today, vaultName, today)
 
 	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Stop Capture Checklist.md"), content, force, counters)
+}
+
+func seedHardTDD(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: convention
+scope: system
+project: paivot-graph
+stack: [claude-code]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# Hard-TDD
+
+The %shard-tdd%s label triggers two-phase test-driven enforcement on a story.
+
+## RED PHASE
+
+The Test Author writes tests ONLY (unit + integration). No implementation code.
+Define contracts and stubs within test files. Deliver test files with an
+AC-to-test mapping that shows which acceptance criterion each test covers.
+
+## GREEN PHASE
+
+The Implementer writes implementation to pass committed tests. MUST NOT modify
+test files (%s*_test.go%s, %s*.test.*%s, %s*.spec.*%s). If a test is wrong,
+report it -- do not fix it.
+
+## Normal Mode
+
+When the %shard-tdd%s label is absent, the developer writes both tests and
+implementation together in a single pass.
+
+## When to Apply
+
+The Sr PM applies the label when:
+- The user explicitly requests two-phase TDD
+- Security-critical paths (auth, crypto, access control)
+- Complex state machines or protocol implementations
+- Data migrations where subtle bugs would be costly post-acceptance
+- Stories where the cost of a missed edge case is high
+
+## Agent Behavior Per Phase
+
+- **PM-Acceptor (RED)**: Verify tests cover all ACs and define contracts.
+  Reject if tests mock infrastructure in integration tests.
+- **PM-Acceptor (GREEN)**: Verify implementation passes tests without
+  modifying test files. Reject if any test file was changed.
+- **Anchor (milestone review)**: %shard-tdd%s stories must show a RED commit
+  before a GREEN commit. If the pattern is missing, return GAPS_FOUND.
+
+## Related
+
+- [[Testing Philosophy]]
+- [[Developer Agent]]
+- [[PM Acceptor Agent]]
+- [[Anchor Agent]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today,
+		"`", "`",
+		"`", "`", "`", "`", "`", "`",
+		"`", "`",
+		"`", "`",
+		today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Hard-TDD.md"), content, force, counters)
+}
+
+func seedTestingPhilosophy(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: convention
+scope: system
+project: paivot-graph
+stack: [claude-code]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# Testing Philosophy
+
+## Default Coverage
+
+Every story ships with unit tests AND integration tests.
+
+## Unit Tests
+
+Pure logic only. No I/O, no network, no filesystem. Fast, deterministic,
+isolated.
+
+## Integration Tests
+
+**Integration tests MUST use real infrastructure -- no mocks.**
+
+This is a hard rule. Mock/prod divergence has caused real incidents where
+mocked tests passed but production migrations failed. The cost of maintaining
+real test infrastructure is far lower than the cost of a false-green test
+suite.
+
+Integration tests exercise:
+- Real database connections
+- Real HTTP calls
+- Real filesystem operations
+
+## Hard-TDD
+
+The %shard-tdd%s label enforces two-phase TDD when the cost of subtle bugs is
+high. See [[Hard-TDD]] for the full protocol.
+
+## PM-Acceptor Enforcement
+
+The PM-Acceptor rejects tests that mock the database in integration tests.
+If a test file uses mocks where real infrastructure should be used, it is
+sent back for revision.
+
+## Related
+
+- [[Hard-TDD]]
+- [[Developer Agent]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today, "`", "`", today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Testing Philosophy.md"), content, force, counters)
+}
+
+func seedTwoLevelBranchModel(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: convention
+scope: system
+project: paivot-graph
+stack: [claude-code, git]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# Two-Level Branch Model
+
+## Level 1: Epic Branches
+
+%sepic/<EPIC-ID>%s branches are cut from %smain%s. One per epic. The Sr PM
+creates the epic branch after backlog creation.
+
+## Level 2: Story Branches
+
+%sstory/<STORY-ID>%s branches are cut from the epic branch. The developer
+works here exclusively. Never commit directly to an epic branch.
+
+## Story Merge Flow
+
+1. Developer commits to story branch
+2. PM-Acceptor accepts the story
+3. Story branch merges to epic branch
+
+%smerge_gate.go%s enforces PM-Acceptor completion before the merge is allowed.
+
+## Epic Merge Flow
+
+1. All stories in the epic are closed
+2. Full test suite including e2e passes
+3. Anchor milestone review returns APPROVED
+4. Epic branch merges to %smain%s
+5. Retro agent runs to extract learnings
+
+## Keeping Story Branches Current
+
+Developers keep their story branch rebased on the epic:
+
+%s%s%s
+git fetch origin && git rebase origin/epic/EPIC_ID && git push --force-with-lease
+%s%s%s
+
+## Merge Mode
+
+Direct merge vs pull request is controlled by the %sworkflow.solo_dev%s
+setting. Solo-dev mode uses direct merge; team mode uses PRs.
+
+## Session End Warning
+
+%spvg/internal/lifecycle/stop.go%s warns if the session ends with an unmerged
+epic branch, prompting the user to merge or document why it remains open.
+
+## Related
+
+- [[Delivery Workflow]]
+- [[Developer Agent]]
+- [[Sr PM Agent]]
+- [[Anchor Agent]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today,
+		"`", "`", "`", "`",
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		"```", "", "",
+		"```", "", "",
+		"`", "`",
+		"`", "`",
+		today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Two-Level Branch Model.md"), content, force, counters)
+}
+
+func seedDeliveryWorkflow(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: convention
+scope: system
+project: paivot-graph
+stack: [claude-code]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# Delivery Workflow
+
+The post-backlog execution flow, from structural gates through epic completion.
+
+## 1. Structural Gates (MANDATORY Before Anchor)
+
+Two deterministic checks must pass before Anchor submission:
+
+- %spvg rtm check%s -- Verify all tagged D&F requirements have covering stories.
+- %spvg lint%s -- Check for artifact collisions (duplicate PRODUCES declarations).
+
+Both must pass. If either fails, the Sr PM fixes the backlog before Anchor
+submission. These gates are deterministic: if they fail, the Anchor WILL reject
+for the same reason. Running them first saves a full Anchor round-trip.
+
+## 2. Anchor Review
+
+Adversarial backlog review. The Anchor checks for gaps: missing walking
+skeletons, horizontal layers, missing integration stories, dependency cycles,
+INVEST violations. Returns APPROVED or REJECTED -- no conditional pass.
+
+If REJECTED: the Sr PM applies the Feedback Generalization Protocol. For each
+issue, identify the general rule, sweep the entire backlog, fix all violations,
+then resubmit.
+
+## 3. Execution Loop
+
+%spvg loop next --json%s drains one epic at a time. Within an epic, the
+priority order is: delivered -> rejected -> ready. No cherry-picking. No
+cross-epic work.
+
+## 4. Epic Completion Gate
+
+All stories closed -> full test suite including e2e -> Anchor milestone review
+-> epic branch merges to %smain%s.
+
+## 5. Retro
+
+%spaivot-graph:retro%s extracts learnings from all accepted stories in the
+completed epic.
+
+## 6. Loop Rotation
+
+After the retro completes, the loop auto-rotates to the next highest-priority
+epic.
+
+## Key Rule
+
+The epic is a containment boundary. Nothing leaves until the gate passes.
+
+## Related
+
+- [[Two-Level Branch Model]]
+- [[Sr PM Agent]]
+- [[Anchor Agent]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today,
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Delivery Workflow.md"), content, force, counters)
+}
+
+func seedVaultAsRuntimeNotReference(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: concept
+scope: system
+project: paivot-graph
+stack: [claude-code, obsidian]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# Vault as Runtime, Not Reference
+
+## Seed Mechanism
+
+Agent prompts are seeded from the plugin repo into the Obsidian vault via
+%smake seed%s (safe mode) and %smake reseed%s (force mode).
+
+## Runtime Loading
+
+At invocation time, agents load their instructions by running:
+
+%s%s%s
+vlt vault="Claude" read file="<Note Name>"
+%s%s%s
+
+They do NOT read from static plugin cache files. The vault is the live source
+of truth.
+
+## Hot Updates
+
+Prompt content can be updated by editing vault notes directly (e.g. %svlt write%s)
+without reinstalling the plugin. The change takes effect on the next agent
+invocation.
+
+## Seed Modes
+
+- %smake seed%s (safe mode): pushes content only to notes that do not exist yet.
+- %smake reseed%s (force mode): merges plugin content with user modifications
+  via three-way merge (diff3). User edits in non-overlapping sections are
+  preserved.
+
+## Why This Matters
+
+The vault is **live runtime configuration**, not a reference archive. Agents
+reading stale notes exhibit stale behavior. Updating a vault note immediately
+changes agent behavior at next invocation.
+
+## Project Vault
+
+The %s.vault/%s directory in projects stores issue state (nd issues, lock
+files). It is runtime state -- never commit %s.vault/%s files to git.
+
+## Related
+
+- [[Session Operating Mode]]
+- [[paivot-graph]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today,
+		"`", "`", "`", "`",
+		"```", "", "",
+		"```", "", "",
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		"`", "`", "`", "`",
+		today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("concepts", "Vault as runtime not reference.md"), content, force, counters)
+}
+
+func seedSubagentQuestionRelay(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: convention
+scope: system
+project: paivot-graph
+stack: [claude-code]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# Subagent Question Relay via Orchestrator
+
+## The Problem
+
+Subagents spawned via the Agent tool cannot directly ask the user questions.
+They have no access to %sAskUserQuestion%s or any interactive prompt.
+
+## The Structural Pattern
+
+1. Subagent emits a %sQUESTIONS_FOR_USER:%s block in its output when it needs
+   clarification.
+2. Orchestrator (dispatcher) detects the block and extracts the questions.
+3. Orchestrator relays the questions to the user via %sAskUserQuestion%s.
+4. User answers.
+5. Dispatcher re-invokes the subagent with the answers included in the prompt.
+6. Loop repeats until the subagent produces output without a
+   %sQUESTIONS_FOR_USER:%s block.
+
+## Primary Users
+
+This is the primary pattern for BLT agents (Business Analyst, Designer,
+Architect) during Discovery & Framing. Each agent may need multiple rounds
+of clarification before producing its deliverable.
+
+## Specialist Review Variant
+
+Specialist challenger agents use a variant of this pattern:
+
+- They emit %sREVIEW_RESULT: APPROVED%s or %sREVIEW_RESULT: REJECTED%s
+- On rejection, they include %sFEEDBACK_FOR_CREATOR%s for the originating agent
+- The dispatcher routes feedback back to the creator, not to the user
+
+## Related
+
+- [[Session Operating Mode]]
+- [[Subagents do not follow advisory instructions]]
+- [[D&F Sequential With Alignment]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today,
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		"`", "`", "`", "`",
+		"`", "`",
+		today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Subagent question relay via orchestrator.md"), content, force, counters)
+}
+
+func seedSubagentsAdvisoryInstructions(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: concept
+scope: system
+project: paivot-graph
+stack: [claude-code]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# Subagents Do Not Follow Advisory Instructions
+
+## The Isolation Rule
+
+Subagents spawned via the Agent tool get their own isolated system prompt.
+They do NOT inherit conversational instructions from the parent session.
+
+Example: saying "Claude, always use X approach" in the parent session has
+no effect on what subagents do.
+
+## What IS Inherited
+
+CLAUDE.md files ARE inherited -- they are loaded from the filesystem, not
+from conversation state. This includes:
+- Project-level %s.claude/CLAUDE.md%s
+- User-level %s~/.claude/CLAUDE.md%s
+
+## Where Behavioral Constraints Must Live
+
+Behavioral constraints on subagents must be in one of:
+
+1. **The agent's own %s.md%s definition** -- the authoritative source of the
+   agent's behavior, stored in the vault.
+2. **CLAUDE.md files** at the project or user level -- inherited via filesystem.
+3. **The explicit prompt** passed when spawning the agent -- the dispatcher
+   must pass instructions explicitly.
+
+## Why Vault-Backed Prompts
+
+This is why paivot-graph agent prompts are vault-backed and loaded at
+invocation: agents get current, complete instructions every time they are
+spawned. No stale cache. No missing context.
+
+## Common Mistake
+
+Telling the orchestrator "make the developer agent do X" without embedding X
+in the agent's spawn prompt. The orchestrator must pass X explicitly -- it
+will not magically propagate.
+
+## Related
+
+- [[Vault as runtime not reference]]
+- [[Subagent question relay via orchestrator]]
+- [[Session Operating Mode]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today,
+		"`", "`",
+		"`", "`",
+		"`", "`",
+		today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("concepts", "Subagents do not follow advisory instructions.md"), content, force, counters)
+}
+
+func seedDFSequentialAlignment(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	content := fmt.Sprintf(`---
+type: concept
+scope: system
+project: paivot-graph
+stack: [claude-code]
+domain: dev-tools-workflow
+status: active
+created: %s
+---
+
+# D&F Sequential With Alignment
+
+## The Sequence
+
+Discovery & Framing runs **BA -> Designer -> Architect sequentially**, not in
+parallel.
+
+1. Business Analyst produces BUSINESS.md
+2. Designer receives BUSINESS.md before producing DESIGN.md
+3. Architect receives BUSINESS.md + DESIGN.md before producing ARCHITECTURE.md
+
+## Why Sequential
+
+Each document builds on the prior:
+
+- The Designer cannot make coherent UX decisions without business constraints.
+- The Architect cannot make coherent technical decisions without the design.
+- Parallel execution produces documents that do not align with each other.
+
+The alignment value outweighs the speed cost: misaligned D&F documents produce
+broken backlogs that cost far more to fix during execution than the time saved
+by running in parallel.
+
+## Specialist Review
+
+When %sdnf.specialist_review%s is enabled, each document receives adversarial
+review from its specialist challenger (ba-challenger, designer-challenger,
+architect-challenger) before being passed to the next BLT agent. This adds
+alignment checking at each stage.
+
+## Cross-Review
+
+After all three documents are complete, BLT agents cross-review each other's
+documents before the Sr PM creates the backlog. This final alignment pass
+catches inter-document inconsistencies.
+
+## Related
+
+- [[Session Operating Mode]]
+- [[Subagent question relay via orchestrator]]
+- [[Sr PM Agent]]
+
+## Changelog
+
+- %s: Seeded from paivot-graph plugin (initial version)
+`, today, "`", "`", today)
+
+	writeNote(vaultDir, baseDir, filepath.Join("concepts", "D&F Sequential With Alignment.md"), content, force, counters)
 }
