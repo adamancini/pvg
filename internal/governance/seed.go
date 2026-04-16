@@ -1024,6 +1024,7 @@ The epic is a containment boundary. Nothing leaves until the gate passes.
 }
 
 func seedVaultAsRuntimeNotReference(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	vaultName := vaultcfg.VaultName()
 	content := fmt.Sprintf(`---
 type: concept
 scope: system
@@ -1046,7 +1047,7 @@ Agent prompts are seeded from the plugin repo into the Obsidian vault via
 At invocation time, agents load their instructions by running:
 
 %s%s%s
-vlt vault="Claude" read file="<Note Name>"
+vlt vault="%s" read file="<Note Name>"
 %s%s%s
 
 They do NOT read from static plugin cache files. The vault is the live source
@@ -1087,6 +1088,7 @@ files). It is runtime state -- never commit %s.vault/%s files to git.
 `, today,
 		"`", "`", "`", "`",
 		"```", "", "",
+		vaultName,
 		"```", "", "",
 		"`", "`",
 		"`", "`",

@@ -321,3 +321,29 @@ func TestSeedStopCaptureChecklist_UsesConfiguredVaultName(t *testing.T) {
 		t.Error("seeded Stop Capture Checklist should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
 	}
 }
+
+func TestSeedVaultAsRuntimeNotReference_UsesConfiguredVaultName(t *testing.T) {
+	t.Setenv("PVG_VAULT", "TestVault")
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	counters := &Counters{}
+
+	seedVaultAsRuntimeNotReference(vaultDir, baseDir, "2026-04-06", false, counters)
+
+	if counters.Created != 1 {
+		t.Fatalf("expected Created=1, got %d", counters.Created)
+	}
+
+	data, err := os.ReadFile(filepath.Join(vaultDir, "concepts", "Vault as runtime not reference.md"))
+	if err != nil {
+		t.Fatalf("reading seeded note: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, `vault="TestVault"`) {
+		t.Error("seeded Vault as runtime note should contain configured vault name TestVault")
+	}
+	if strings.Contains(content, `vault="Claude"`) {
+		t.Error("seeded Vault as runtime note should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
+	}
+}
