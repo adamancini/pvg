@@ -1395,6 +1395,7 @@ Checks:
   nd-doctor                 Run nd doctor and report findings
   loop-state                Verify loop state file is valid
   worktree-hygiene          Check for stale git worktrees
+  claude-config-worktree-paths  Check ~/.claude/plugins/*.json for ephemeral .worktrees/ paths
 
 Flags:
   --json    Output as JSON

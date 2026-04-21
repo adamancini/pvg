@@ -51,6 +51,7 @@ func RunAll(projectRoot string) Report {
 	r.Findings = append(r.Findings, checkNDDoctor(projectRoot))
 	r.Findings = append(r.Findings, checkLoopState(projectRoot))
 	r.Findings = append(r.Findings, checkWorktreeHygiene(projectRoot))
+	r.Findings = append(r.Findings, checkClaudeConfigNoWorktreePaths())
 
 	r.Passed = true
 	for _, f := range r.Findings {
@@ -216,6 +217,41 @@ func checkWorktreeHygiene(projectRoot string) Finding {
 		}
 	}
 	return Finding{Name: "worktree-hygiene", Status: StatusPass, Message: fmt.Sprintf("%d worktree(s), all valid", len(worktrees))}
+}
+
+// checkClaudeConfigNoWorktreePaths scans shared Claude config files for
+// `.worktrees/` path fragments. Such paths are ephemeral: when the worktree
+// is removed, every other live Claude session that reads the config breaks.
+// The check is host-global (does not depend on projectRoot).
+func checkClaudeConfigNoWorktreePaths() Finding {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Finding{Name: "claude-config-worktree-paths", Status: StatusSkip, Message: fmt.Sprintf("cannot resolve home: %v", err)}
+	}
+	configs := []string{
+		filepath.Join(home, ".claude", "plugins", "config.json"),
+		filepath.Join(home, ".claude", "plugins", "known_marketplaces.json"),
+		filepath.Join(home, ".claude", "settings.json"),
+	}
+
+	var offenders []string
+	for _, p := range configs {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(data), ".worktrees/") {
+			offenders = append(offenders, p)
+		}
+	}
+	if len(offenders) > 0 {
+		return Finding{
+			Name:    "claude-config-worktree-paths",
+			Status:  StatusFail,
+			Message: fmt.Sprintf("ephemeral .worktrees/ path(s) found in: %s -- repoint to canonical checkout and re-run 'make install' from paivot-graph/", strings.Join(offenders, ", ")),
+		}
+	}
+	return Finding{Name: "claude-config-worktree-paths", Status: StatusPass, Message: "no ephemeral worktree paths in shared Claude config"}
 }
 
 // --- fix implementations ---

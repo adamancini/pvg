@@ -238,10 +238,13 @@ func TestRunAll_ProducesReport(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vaultDir, ".nd.yaml"), []byte("prefix: TEST\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Isolate checkClaudeConfigNoWorktreePaths from the developer's real
+	// ~/.claude config so the test is hermetic.
+	t.Setenv("HOME", t.TempDir())
 
 	r := RunAll(root)
-	if len(r.Findings) != 6 {
-		t.Fatalf("expected 6 findings, got %d", len(r.Findings))
+	if len(r.Findings) != 7 {
+		t.Fatalf("expected 7 findings, got %d", len(r.Findings))
 	}
 
 	names := make(map[string]bool)
@@ -256,7 +259,7 @@ func TestRunAll_ProducesReport(t *testing.T) {
 		t.Logf("[%s] %s: %s", f.Status, f.Name, f.Message)
 	}
 
-	for _, expected := range []string{"vault-resolution", "nd-reachable", "shared-config-consistency", "nd-doctor", "loop-state", "worktree-hygiene"} {
+	for _, expected := range []string{"vault-resolution", "nd-reachable", "shared-config-consistency", "nd-doctor", "loop-state", "worktree-hygiene", "claude-config-worktree-paths"} {
 		if !names[expected] {
 			t.Errorf("missing check %q", expected)
 		}
@@ -290,6 +293,58 @@ func TestFix_PrunesWorktrees(t *testing.T) {
 	}
 	if len(actions) == 0 {
 		t.Error("expected at least one action")
+	}
+}
+
+// --- claude-config-worktree-paths ---
+
+func TestCheckClaudeConfigNoWorktreePaths_PassWhenNoFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	f := checkClaudeConfigNoWorktreePaths()
+	if f.Status != StatusPass {
+		t.Fatalf("expected pass when no config files exist, got %s: %s", f.Status, f.Message)
+	}
+}
+
+func TestCheckClaudeConfigNoWorktreePaths_PassWhenClean(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	plugins := filepath.Join(home, ".claude", "plugins")
+	if err := os.MkdirAll(plugins, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	clean := `{"paivot-graph":{"source":{"path":"/Users/dev/src/paivot-ai/paivot-graph"}}}`
+	if err := os.WriteFile(filepath.Join(plugins, "known_marketplaces.json"), []byte(clean), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f := checkClaudeConfigNoWorktreePaths()
+	if f.Status != StatusPass {
+		t.Fatalf("expected pass, got %s: %s", f.Status, f.Message)
+	}
+}
+
+func TestCheckClaudeConfigNoWorktreePaths_FailWhenPoisoned(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	plugins := filepath.Join(home, ".claude", "plugins")
+	if err := os.MkdirAll(plugins, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	poisoned := `{"paivot-graph":{"source":{"path":"/Users/dev/src/paivot-ai/.worktrees/feat/paivot-graph"}}}`
+	target := filepath.Join(plugins, "known_marketplaces.json")
+	if err := os.WriteFile(target, []byte(poisoned), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f := checkClaudeConfigNoWorktreePaths()
+	if f.Status != StatusFail {
+		t.Fatalf("expected fail, got %s: %s", f.Status, f.Message)
+	}
+	if !contains(f.Message, target) {
+		t.Errorf("expected message to cite offending file %q, got: %s", target, f.Message)
 	}
 }
 
