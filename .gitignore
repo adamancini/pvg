@@ -7,7 +7,7 @@ Thumbs.db
 *~
 .idea/
 .vscode/
-
+.worktrees/
 # Paivot runtime state (managed by pvg)
 .vault/issues/
 .vault/.nd.yaml
