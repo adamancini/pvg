@@ -121,6 +121,7 @@ func Seed(force bool, pluginDir string) error {
 	seedSubagentQuestionRelay(vaultDir, baseDir, today, force, counters)
 	seedSubagentsAdvisoryInstructions(vaultDir, baseDir, today, force, counters)
 	seedDFSequentialAlignment(vaultDir, baseDir, today, force, counters)
+	seedThreeWayMergeForSeededVaultNotes(vaultDir, baseDir, today, force, counters)
 
 	fmt.Println()
 	fmt.Printf("Done. Created: %d, Updated: %d, Merged: %d, Conflicted: %d, Skipped: %d\n",
@@ -1290,4 +1291,144 @@ catches inter-document inconsistencies.
 `, today, "`", "`", today)
 
 	writeNote(vaultDir, baseDir, filepath.Join("concepts", "D&F Sequential With Alignment.md"), content, force, counters)
+}
+
+func seedThreeWayMergeForSeededVaultNotes(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	bt := "`"
+	content := "---\n" +
+		"type: concept\n" +
+		"scope: system\n" +
+		"project: paivot\n" +
+		"stack: [claude-code]\n" +
+		"domain: dev-tools-knowledge\n" +
+		"status: active\n" +
+		"created: " + today + "\n" +
+		"---\n\n" +
+		"# Three-way Merge for Seeded Vault Notes\n\n" +
+		"When the plugin seeds a note into your vault and you later edit that\n" +
+		"note, " + bt + "pvg seed --force" + bt + " does not blindly overwrite your edits. It\n" +
+		"runs a three-way merge against a stored baseline so plugin updates and\n" +
+		"user edits coexist where possible, and produces conflict markers only\n" +
+		"when both sides changed the same region.\n\n" +
+
+		"## What the Baseline Directory Is\n\n" +
+		"Every successful seed stores a verbatim copy of the seeded content under\n" +
+		bt + ".seed-baselines/" + bt + " inside your vault, mirroring the layout of the\n" +
+		"seeded notes (for example " + bt + ".seed-baselines/concepts/Three-way merge for seeded vault notes.md" + bt + "\n" +
+		"holds the baseline for this very note). The baseline is the third side\n" +
+		"of the three-way merge: it represents \"what the plugin last wrote\",\n" +
+		"which lets the merge engine tell apart \"user edited this region\" from\n" +
+		"\"plugin changed this region\" from \"both sides changed this region\".\n\n" +
+		"The directory is plugin-managed runtime state. You do not edit it by\n" +
+		"hand. It is updated automatically on every CREATE, UPDATE, or clean\n" +
+		"MERGE outcome, and intentionally left stale on a CONFLICT outcome so\n" +
+		"that after you resolve the conflict and rerun " + bt + "pvg seed --force" + bt + " the\n" +
+		"merge engine sees your resolved content as the new baseline candidate.\n\n" +
+
+		"## When " + bt + "pvg seed" + bt + " Skips and When " + bt + "pvg seed --force" + bt + " Merges\n\n" +
+		"The " + bt + "pvg seed" + bt + " command has two modes:\n\n" +
+		"- **Safe mode** (" + bt + "pvg seed" + bt + ", no flag): if a target note does not\n" +
+		"  exist, it is created. If it already exists, it is **skipped** -- no\n" +
+		"  read, no write, no baseline check. Safe mode never overwrites local\n" +
+		"  edits.\n" +
+		"- **Force mode** (" + bt + "pvg seed --force" + bt + "): existing notes are run through\n" +
+		"  the three-way merge described below. New notes are still simply\n" +
+		"  created. The baseline is updated on every clean outcome so future\n" +
+		"  reseeds use the latest plugin content as the merge base.\n\n" +
+		"If you have edited a seeded note and want to pull in plugin updates,\n" +
+		"you must run " + bt + "pvg seed --force" + bt + ". Plain " + bt + "pvg seed" + bt + " will silently\n" +
+		"skip your note.\n\n" +
+
+		"## The Diff3 Merge Semantics\n\n" +
+		"Force mode delegates the merge to " + bt + "/usr/bin/diff3 -m" + bt + " via\n" +
+		bt + "pvg/internal/governance/merge.go::Merge3" + bt + ". The three inputs are:\n\n" +
+		"- **base** -- the stored baseline (what the plugin last wrote)\n" +
+		"- **theirs** -- the new plugin content (what the plugin wants to write\n" +
+		"  now)\n" +
+		"- **ours** -- the current vault content (your possibly-edited copy)\n\n" +
+		bt + "diff3 -m" + bt + " computes the three-way merge and returns the merged text\n" +
+		"plus a flag indicating whether any conflicts remain unresolved. Non-\n" +
+		"overlapping edits on either side are preserved cleanly. Overlapping\n" +
+		"edits surface as conflict markers (described below) and require manual\n" +
+		"resolution.\n\n" +
+		"If " + bt + "diff3" + bt + " itself errors out (for example because the binary is\n" +
+		"missing), the seed routine falls back to a plain overwrite and\n" +
+		"increments the Updated counter, so a missing " + bt + "diff3" + bt + " never silently\n" +
+		"drops your edits without warning -- it logs a WARN line and proceeds\n" +
+		"with the safer behaviour for that note (overwrite plus baseline\n" +
+		"refresh).\n\n" +
+
+		"## What the Five Counters Mean\n\n" +
+		"At the end of every seed run " + bt + "pvg" + bt + " prints a summary line of the form\n" +
+		bt + "Done. Created: A, Updated: B, Merged: C, Conflicted: D, Skipped: E" + bt + ".\n" +
+		"Each counter has an exact meaning:\n\n" +
+		"- **Created** -- the note did not exist in the vault, so the plugin\n" +
+		"  wrote it for the first time. Baseline written.\n" +
+		"- **Updated** -- the note existed and matched its baseline (you had not\n" +
+		"  edited it), so the plugin overwrote it with the latest content.\n" +
+		"  Baseline written. Also used as the safe fallback when no baseline\n" +
+		"  existed yet, or when the merge engine itself errored.\n" +
+		"- **Merged** -- the note existed, did not match its baseline (you had\n" +
+		"  edited it), three-way merge succeeded with no conflicts, and the\n" +
+		"  merged result was written back. Baseline written.\n" +
+		"- **Conflicted** -- the note existed, did not match its baseline, and\n" +
+		"  three-way merge produced unresolved overlap regions. The file was\n" +
+		"  still written, but with conflict markers in place. Baseline **not**\n" +
+		"  written. The relative path is appended to\n" +
+		"  " + bt + "Counters.ConflictedFiles" + bt + " and printed in a CONFLICTS section\n" +
+		"  after the summary.\n" +
+		"- **Skipped** -- safe mode encountered an existing note. No I/O, no\n" +
+		"  merge.\n\n" +
+		"A clean force-reseed of an unedited vault produces all Updated. A clean\n" +
+		"force-reseed of an edited vault produces a mix of Updated (untouched\n" +
+		"seeded notes), Merged (your edits and plugin edits did not overlap),\n" +
+		"and possibly Conflicted (your edits and plugin edits overlapped on the\n" +
+		"same lines).\n\n" +
+
+		"## What Conflict Markers Look Like and Where to Find Them\n\n" +
+		"When a Conflicted outcome occurs, the merged file written into your\n" +
+		"vault contains diff3 conflict markers around each unresolved region.\n" +
+		"The markers are textual line-prefixes: a line of seven less-than\n" +
+		"characters followed by a label, then the conflicting block, then a line\n" +
+		"of seven equals characters as a separator, then the other side, then a\n" +
+		"line of seven greater-than characters followed by a label. (Markers are\n" +
+		"described textually here so this concept note does not itself contain\n" +
+		"markers that would confuse downstream tooling, your diff viewer, or\n" +
+		"future reseeds of this very file.)\n\n" +
+		"You will see one such block per overlapping region. Outside the marker\n" +
+		"blocks, the rest of the file is the cleanly-merged result. To find\n" +
+		"them:\n\n" +
+		"- The seed run prints " + bt + "CONFLICT: <relative path>" + bt + " for every conflicted\n" +
+		"  file, plus a final CONFLICTS section listing each path.\n" +
+		"- You can locate them in your vault by grepping for a run of seven\n" +
+		"  less-than characters at the start of a line, or by opening the file\n" +
+		"  in any editor with merge-conflict highlighting -- Obsidian shows the\n" +
+		"  markers as plain text but most IDEs highlight them visually.\n\n" +
+		"To resolve a conflict, edit the rendered note to choose between or\n" +
+		"combine the two sides, delete the marker lines, save, and re-run\n" +
+		bt + "pvg seed --force" + bt + ". Because the baseline was intentionally not\n" +
+		"updated on conflict, the rerun will see your resolved content as ours,\n" +
+		"the original baseline as base, and the same plugin content as theirs,\n" +
+		"which typically merges cleanly and updates the baseline so subsequent\n" +
+		"reseeds stay quiet.\n\n" +
+		"If you would rather discard one side entirely, edit the file to be\n" +
+		"exactly what you want, then re-run " + bt + "pvg seed --force" + bt + " once -- the\n" +
+		"result will record your chosen content as the new baseline.\n\n" +
+
+		"## Which Notes Are Subject to This\n\n" +
+		"Every note seeded by " + bt + "pvg seed" + bt + " -- agent prompts under\n" +
+		bt + "methodology/" + bt + ", behavioural conventions under " + bt + "conventions/" + bt + ", and\n" +
+		"concepts under " + bt + "concepts/" + bt + " -- goes through the same " + bt + "writeNote" + bt + "\n" +
+		"code path and is therefore subject to the same three-way merge in force\n" +
+		"mode. Notes you create yourself (anywhere in the vault) are never\n" +
+		"touched by the seeder because they do not have a baseline.\n\n" +
+
+		"## Related\n\n" +
+		"- [[Vault as runtime not reference]]\n" +
+		"- [[Delivery Workflow]]\n\n" +
+
+		"## Changelog\n\n" +
+		"- " + today + ": Seeded from paivot-graph plugin (initial version)\n"
+
+	writeNote(vaultDir, baseDir, filepath.Join("concepts", "Three-way merge for seeded vault notes.md"), content, force, counters)
 }
