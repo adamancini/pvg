@@ -322,6 +322,137 @@ func TestSeedStopCaptureChecklist_UsesConfiguredVaultName(t *testing.T) {
 	}
 }
 
+func TestSeedThreeWayMergeForSeededVaultNotes_CreatesConceptNote(t *testing.T) {
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	counters := &Counters{}
+
+	seedThreeWayMergeForSeededVaultNotes(vaultDir, baseDir, "2026-05-01", false, counters)
+
+	if counters.Created != 1 {
+		t.Fatalf("expected Created=1, got %d", counters.Created)
+	}
+
+	notePath := filepath.Join(vaultDir, "concepts", "Three-way merge for seeded vault notes.md")
+	data, err := os.ReadFile(notePath)
+	if err != nil {
+		t.Fatalf("reading seeded note at %s: %v", notePath, err)
+	}
+	content := string(data)
+
+	// Frontmatter checks (AC #4): type, scope: system, project: paivot,
+	// stack, domain, status, created.
+	wantFrontmatter := []string{
+		"type: concept",
+		"scope: system",
+		"project: paivot",
+		"stack: [claude-code]",
+		"domain: dev-tools-knowledge",
+		"status: active",
+		"created: 2026-05-01",
+	}
+	for _, want := range wantFrontmatter {
+		if !strings.Contains(content, want) {
+			t.Errorf("rendered note missing frontmatter line %q", want)
+		}
+	}
+
+	// Body coverage (AC #2): .seed-baselines/, Merge3 via diff3 -m, five
+	// counter outcomes.
+	wantBody := []string{
+		".seed-baselines/",
+		"diff3 -m",
+		"Merge3",
+		"Created",
+		"Updated",
+		"Merged",
+		"Conflicted",
+		"Skipped",
+	}
+	for _, want := range wantBody {
+		if !strings.Contains(content, want) {
+			t.Errorf("rendered note missing body content %q", want)
+		}
+	}
+
+	// Conflict marker description and resolution guidance (AC #3).
+	// Normalize whitespace so phrases that wrap across lines still match.
+	flat := strings.Join(strings.Fields(content), " ")
+	conflictGuidance := []string{
+		"seven less-than characters",
+		"seven equals characters",
+		"seven greater-than characters",
+		"resolve a conflict",
+	}
+	for _, want := range conflictGuidance {
+		if !strings.Contains(flat, want) {
+			t.Errorf("rendered note (whitespace-normalized) missing conflict marker description %q", want)
+		}
+	}
+
+	// Required wikilinks (AC #5).
+	wantLinks := []string{
+		"[[Vault as runtime not reference]]",
+		"[[Delivery Workflow]]",
+	}
+	for _, want := range wantLinks {
+		if !strings.Contains(content, want) {
+			t.Errorf("rendered note missing wikilink %q", want)
+		}
+	}
+
+	// AC #7: must NOT reference a "seed/" directory. Allow ".seed-baselines/"
+	// (the canonical baseline dir name) but not a bare "seed/" path.
+	scrubbed := strings.ReplaceAll(content, ".seed-baselines/", "")
+	if strings.Contains(scrubbed, "seed/") {
+		t.Errorf("rendered note must not reference a `seed/` directory; remaining occurrences after stripping `.seed-baselines/`:\n%s",
+			scrubbed)
+	}
+
+	// AC #8: no raw 7-character conflict markers.
+	rawMarkers := []string{
+		"<<<<<<<",
+		"=======",
+		">>>>>>>",
+	}
+	for _, marker := range rawMarkers {
+		if strings.Contains(content, marker) {
+			t.Errorf("rendered note must not contain raw conflict marker %q", marker)
+		}
+	}
+
+	// Cross-story consistency with PAI-1f5w canon: command names must be
+	// `pvg seed` / `pvg seed --force`, NOT `make seed` / `make reseed`.
+	if strings.Contains(content, "make seed") || strings.Contains(content, "make reseed") {
+		t.Errorf("rendered note must not reference removed `make seed` / `make reseed` targets; use `pvg seed` / `pvg seed --force`")
+	}
+	if !strings.Contains(content, "pvg seed --force") {
+		t.Errorf("rendered note must reference the canonical `pvg seed --force` command")
+	}
+}
+
+func TestSeed_IncludesThreeWayMergeNote_E2E(t *testing.T) {
+	// E2E: render through the full Seed() call ordering by invoking the
+	// seeder directly alongside the others, asserting the new concept file
+	// is written between seedDFSequentialAlignment's note and any later
+	// addition.
+	vaultDir := t.TempDir()
+	baseDir := filepath.Join(vaultDir, ".seed-baselines")
+	counters := &Counters{}
+
+	seedDFSequentialAlignment(vaultDir, baseDir, "2026-05-01", false, counters)
+	seedThreeWayMergeForSeededVaultNotes(vaultDir, baseDir, "2026-05-01", false, counters)
+
+	if counters.Created != 2 {
+		t.Fatalf("expected Created=2 after both seeders, got %d", counters.Created)
+	}
+
+	notePath := filepath.Join(vaultDir, "concepts", "Three-way merge for seeded vault notes.md")
+	if _, err := os.Stat(notePath); err != nil {
+		t.Fatalf("expected concept note at %s after fresh seed: %v", notePath, err)
+	}
+}
+
 func TestSeedVaultAsRuntimeNotReference_UsesConfiguredVaultName(t *testing.T) {
 	t.Setenv("PVG_VAULT", "TestVault")
 	vaultDir := t.TempDir()
