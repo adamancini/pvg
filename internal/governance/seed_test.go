@@ -478,3 +478,36 @@ func TestSeedVaultAsRuntimeNotReference_UsesConfiguredVaultName(t *testing.T) {
 		t.Error("seeded Vault as runtime note should NOT contain hardcoded vault=\"Claude\" when PVG_VAULT is set")
 	}
 }
+
+func TestFindAgentSource_HappyPath(t *testing.T) {
+	agentsDir := t.TempDir()
+	agentFile := filepath.Join(agentsDir, "sr-pm.md")
+	if err := os.WriteFile(agentFile, []byte("# Sr PM Agent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := findAgentSource(agentsDir, "sr-pm", "Sr PM Agent")
+	if got != agentFile {
+		t.Fatalf("findAgentSource() = %q, want %q", got, agentFile)
+	}
+}
+
+func TestFindAgentSource_MissingFile(t *testing.T) {
+	agentsDir := t.TempDir()
+
+	got := findAgentSource(agentsDir, "nonexistent", "Nonexistent Agent")
+	if got != "" {
+		t.Fatalf("findAgentSource() = %q, want empty string", got)
+	}
+}
+
+func TestFindAgentSource_NoSeedProbeRegression(t *testing.T) {
+	// Verify findAgentSource does not panic or error when no seed/ sibling exists.
+	agentsDir := t.TempDir()
+	// Intentionally do NOT create a seed/ sibling.
+
+	got := findAgentSource(agentsDir, "sr-pm", "Sr PM Agent")
+	if got != "" {
+		t.Fatalf("findAgentSource() = %q, want empty string when agent file is absent", got)
+	}
+}

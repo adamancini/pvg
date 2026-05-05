@@ -289,38 +289,13 @@ func writeNote(vaultDir, baseDir, relPath, content string, force bool, counters 
 	}
 }
 
-// findAgentSource resolves the best source file for a given agent.
-// Priority: seed/ directory (rich prompts) > agents/ directory (fallback loaders).
-// The seed/ directory uses vault-style names (e.g. "Sr PM Playbook.md"),
-// while agents/ uses slug names (e.g. "sr-pm.md").
+// findAgentSource resolves the source file for a given agent.
+// Agents are self-contained as agents/<slug>.md (paivot-graph v1.53.0+).
 func findAgentSource(agentSrc, slug, vaultName string) string {
-	// agentSrc points to <plugin>/agents/. Derive seed dir as sibling.
-	seedDir := filepath.Join(filepath.Dir(agentSrc), "seed")
-
-	// Check seed/ directory for files matching the vault name pattern.
-	// Convention: seed files may use the vault name or a descriptive title.
-	if entries, err := os.ReadDir(seedDir); err == nil {
-		vaultLower := strings.ToLower(vaultName)
-		// Strip " Agent" suffix for matching (e.g. "Sr PM Agent" -> "Sr PM")
-		baseName := strings.TrimSuffix(vaultLower, " agent")
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-				continue
-			}
-			nameLower := strings.ToLower(strings.TrimSuffix(e.Name(), ".md"))
-			// Match if filename starts with the base name (e.g. "sr pm playbook" starts with "sr pm")
-			if strings.HasPrefix(nameLower, baseName) {
-				return filepath.Join(seedDir, e.Name())
-			}
-		}
-	}
-
-	// Fall back to agents/<slug>.md
 	agentFile := filepath.Join(agentSrc, slug+".md")
 	if _, err := os.Stat(agentFile); err == nil {
 		return agentFile
 	}
-
 	return ""
 }
 
