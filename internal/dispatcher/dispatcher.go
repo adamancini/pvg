@@ -97,6 +97,7 @@ var gitignoreEntries = []string{
 	".vault/.piv-loop-state.json",
 	".vault/.piv-loop-snapshot.json",
 	".vault/.dispatcher-state.json",
+	".vault/.sessionname-state.json",
 	".vault/.vlt.lock",
 	".vault/.guard/",
 }

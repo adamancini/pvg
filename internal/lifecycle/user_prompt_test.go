@@ -45,6 +45,7 @@ func TestContainsTriggerPhrase_CaseInsensitive(t *testing.T) {
 }
 
 func TestDispatcherActivationContext_ContainsKeyPhrases(t *testing.T) {
+	ctx := buildDispatcherActivationContext("test-project", false)
 	checks := []string{
 		"DISPATCHER MODE ACTIVE",
 		"coordinator only",
@@ -54,7 +55,7 @@ func TestDispatcherActivationContext_ContainsKeyPhrases(t *testing.T) {
 		"QUESTIONS_FOR_USER",
 	}
 	for _, phrase := range checks {
-		if !strings.Contains(dispatcherActivationContext, phrase) {
+		if !strings.Contains(ctx, phrase) {
 			t.Errorf("activation context missing %q", phrase)
 		}
 	}
@@ -78,7 +79,8 @@ func TestDispatcherReminderContext_ContainsKeyPhrases(t *testing.T) {
 }
 
 func TestDispatcherReminderContext_IsShorterThanActivation(t *testing.T) {
-	if len(dispatcherReminderContext) >= len(dispatcherActivationContext) {
+	activation := buildDispatcherActivationContext("test-project", false)
+	if len(dispatcherReminderContext) >= len(activation) {
 		t.Error("reminder context should be more concise than activation context")
 	}
 }

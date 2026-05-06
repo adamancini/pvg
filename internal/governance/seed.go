@@ -122,6 +122,7 @@ func Seed(force bool, pluginDir string) error {
 	seedSubagentsAdvisoryInstructions(vaultDir, baseDir, today, force, counters)
 	seedDFSequentialAlignment(vaultDir, baseDir, today, force, counters)
 	seedThreeWayMergeForSeededVaultNotes(vaultDir, baseDir, today, force, counters)
+	seedSessionNaming(vaultDir, baseDir, today, force, counters)
 
 	fmt.Println()
 	fmt.Printf("Done. Created: %d, Updated: %d, Merged: %d, Conflicted: %d, Skipped: %d\n",
@@ -1406,4 +1407,56 @@ func seedThreeWayMergeForSeededVaultNotes(vaultDir, baseDir, today string, force
 		"- " + today + ": Seeded from paivot-graph plugin (initial version)\n"
 
 	writeNote(vaultDir, baseDir, filepath.Join("concepts", "Three-way merge for seeded vault notes.md"), content, force, counters)
+}
+
+func seedSessionNaming(vaultDir, baseDir, today string, force bool, counters *Counters) {
+	bt := "`"
+	content := "---\n" +
+		"type: convention\n" +
+		"scope: system\n" +
+		"project: paivot-graph\n" +
+		"stack: [claude-code]\n" +
+		"domain: dev-tools-workflow\n" +
+		"status: active\n" +
+		"created: " + today + "\n" +
+		"---\n\n" +
+		"# Session Naming\n\n" +
+		"Claude Code sessions can be renamed with the slash command " + bt + "/rename" + bt + " and\n" +
+		"resumed by name (" + bt + "claude --resume \"<name>\"" + bt + "). Adopting a project-scoped\n" +
+		"naming convention turns the session list into a useful navigation surface.\n\n" +
+		"## Naming Format\n\n" +
+		"Use " + bt + "project: workstream" + bt + " (colon-space separator).\n\n" +
+		"- **Project** -- derived from cwd basename (e.g., " + bt + "pvg" + bt + ", " + bt + "paivot-graph" + bt + ").\n" +
+		"- **Workstream** -- high-level purpose (e.g., " + bt + "session naming UX" + bt + ",\n" +
+		"  " + bt + "fork hygiene migration" + bt + "). Not story-specific.\n\n" +
+		"Examples:\n" +
+		"- " + bt + "pvg: session naming UX" + bt + "\n" +
+		"- " + bt + "paivot-graph: fork hygiene migration" + bt + "\n\n" +
+		"## Who Renames\n\n" +
+		"Only the **orchestrator** (main Claude Code session) should rename.\n" +
+		"Subagents do not trigger rename suggestions. Developer-loop iterations\n" +
+		"do not trigger additional renames -- the suggestion is one-shot per\n" +
+		"session_id.\n\n" +
+		"## Trivial-Prompt Suppression\n\n" +
+		"The rename suggestion is injected on the first UserPromptSubmit for a\n" +
+		"session. If the first prompt is a greeting, clarifying question, or\n" +
+		"single-token command, the model should wait until scope is clear before\n" +
+		"calling " + bt + "/rename" + bt + ". The decision is owned by the model, not the hook.\n\n" +
+		"## Collision Disambiguation\n\n" +
+		"If a name collision is detected, append a numeric suffix:\n" +
+		"- " + bt + "pvg: session naming UX (2)" + bt + "\n\n" +
+		"This is a low-frequency edge case; the model handles it organically.\n\n" +
+		"## Anti-Patterns\n\n" +
+		"- **Per-story renames** -- do not rename every time a new story is picked\n" +
+		"  up. Workstream is broader than a single story.\n" +
+		"- **Subagent renames** -- subagents should not rename their sessions.\n" +
+		"- **Hyper-specific names** -- avoid " + bt + "pvg: fix bug in user_prompt.go line 47" + bt + ".\n" +
+		"  Keep the workstream name broad enough to survive multiple stories.\n\n" +
+		"## Related\n\n" +
+		"- [[Session Operating Mode]]\n" +
+		"- [[Dispatcher Mode]] (injected context)\n\n" +
+		"## Changelog\n\n" +
+		"- " + today + ": Seeded from paivot-graph plugin (initial version)\n"
+
+	writeNote(vaultDir, baseDir, filepath.Join("conventions", "Session Naming.md"), content, force, counters)
 }
