@@ -53,6 +53,7 @@ import (
 	"github.com/paivot-ai/pvg/internal/settings"
 	"github.com/paivot-ai/pvg/internal/story"
 	"github.com/paivot-ai/pvg/internal/vaultcfg"
+	"github.com/paivot-ai/pvg/internal/vaultstatus"
 	"github.com/paivot-ai/pvg/internal/verify"
 	"github.com/paivot-ai/pvg/internal/worktree"
 )
@@ -136,6 +137,8 @@ func main() {
 		err = runWorktree(args)
 	case "doctor":
 		err = runDoctor(args)
+	case "vault-status":
+		err = runVaultStatus(args)
 	case "fetch-vlt-skill":
 		force := len(args) > 0 && (args[0] == "--force" || args[0] == "-f")
 		err = lifecycle.FetchVltSkill(force)
@@ -190,6 +193,7 @@ Commands:
   verify [path...] [flags]  Scan source files for stubs, thin files, TODOs
   worktree remove <path>   Safely remove a worktree (CWD-independent) [alias: wt]
   doctor [--json] [--fix]  Run diagnostic checks on vault configuration
+  vault-status             Show vault health and note counts
   fetch-vlt-skill [--force]  Download and install the vlt skill from GitHub
   version                Print version
 	help                   Show this help`)
@@ -1436,6 +1440,32 @@ Flags:
 	}
 
 	if !report.Passed {
+		return cliExit{code: 1}
+	}
+	return nil
+}
+
+func runVaultStatus(args []string) error {
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Fprintln(os.Stderr, `pvg vault-status -- show vault health and note counts
+
+Reports on the contents and health of the system vault (default: Claude).
+Reads PVG_VAULT env var for vault name override.`)
+			return nil
+		}
+		return fmt.Errorf("unknown flag %q (see pvg vault-status --help)", arg)
+	}
+
+	vaultDir, err := vaultcfg.VaultDir()
+	if err != nil {
+		return fmt.Errorf("cannot resolve vault: %w", err)
+	}
+
+	report := vaultstatus.Analyze(vaultDir, vaultcfg.VaultName())
+	fmt.Print(vaultstatus.FormatText(report))
+
+	if !report.Healthy {
 		return cliExit{code: 1}
 	}
 	return nil
